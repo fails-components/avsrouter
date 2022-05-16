@@ -1,0 +1,49 @@
+{
+  "name": "avsrouter",
+  "version": "0.0.0",
+  "description": "Audio, Video, Screensharing router using Webtransport and Websockets as fallback",
+  "main": "src/server.js",
+  "source": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon -r dotenv/config src/server.js",
+    "test": "run-s test:lint",
+    "test:lint": "eslint ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fails-components/avsrouter.git"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.17.10",
+    "@babel/eslint-parser": "^7.17.0",
+    "cmake-js": "^6.3.0",
+    "eslint": "^7.32.0",
+    "eslint-config-prettier": "^7.2.0",
+    "eslint-config-standard": "^16.0.2",
+    "eslint-plugin-import": "^2.25.2",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^3.4.1",
+    "eslint-plugin-promise": "^4.3.1",
+    "eslint-plugin-standard": "^4.1.0",
+    "prettier": "^2.4.1"
+  },
+  "keywords": [
+    "audio",
+    "video",
+    "routing",
+    "web"
+  ],
+  "author": "Marten Richter",
+  "license": "AGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/fails-components/avsrouter/issues"
+  },
+  "homepage": "https://github.com/fails-components/avsrouter#readme",
+  "dependencies": {
+    "@fails-components/webtransport": "^0.0.1-rc.0",
+    "bson": "^4.6.3",
+    "selfsigned": "^2.0.1"
+  }
+}
