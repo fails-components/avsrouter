@@ -283,8 +283,9 @@ export class AVSrouter {
 
       const paketcommitter = this.getPaketCommiter(id, type)
       const commitAndStoreMessage = this.getCommitAndStoreMessage(id, type)
+      let streamwriter
       try {
-        const streamwriter = await stream.writable.getWriter()
+        streamwriter = await stream.writable.getWriter()
 
         while (running) {
           // first the paket, as they are processed partially
@@ -315,8 +316,8 @@ export class AVSrouter {
       try {
         this.removePaketCommiter(id, type, paketcommitter)
         streamreader.releaseLock()
-        streamwriter.releaseLock()
-        stream.readable.close()
+        if (streamwriter) streamwriter.releaseLock()
+        stream.readable.cancel()
         stream.writable.close()
       } catch (error) {
         console.log('error cleanup processIncomingStream', error)
