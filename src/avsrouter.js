@@ -92,8 +92,7 @@ class ParseHelper {
               paketpos += hdrlen + bsonlen
             } else {
               let keyframe = false
-              if ( hdrlen >= 17)
-              {
+              if (hdrlen >= 17) {
                 const hdrflags = wdv.getUint8(paketpos + 16)
                 keyframe = !!(hdrflags & 1)
               }
@@ -190,8 +189,8 @@ export class AVSrouter {
     hdrdv.setUint32(hdrpos, bson.length + 6)
     hdrpos += 4
     hdrdv.setUint16(hdrpos, 0)
-    sendmeth({message: new Uint8Array(headerbuffer)})
-    sendmeth({message: bson })
+    sendmeth({ message: new Uint8Array(headerbuffer) })
+    sendmeth({ message: bson })
   }
 
   getCommitAndStoreMessage(id, type) {
@@ -226,8 +225,7 @@ export class AVSrouter {
   registerStream(id, type, listener) {
     const realm = this.getRealmObj(id, type)
     realm.listeners.add(listener)
-    for (let mess in realm.messages)
-    {
+    for (let mess in realm.messages) {
       this.sendBson(realm.messages[mess], listener)
     }
   }
@@ -296,12 +294,10 @@ export class AVSrouter {
               paketcommitter(chunk)
             else {
               let store = false
-              if (chunk.task && chunk.task === 'decoderconfig'){
+              if (chunk.task && chunk.task === 'decoderconfig') {
                 store = true
                 console.log('decoderconfig', chunk)
-
               }
-                
               if (store) commitAndStoreMessage(chunk)
             }
           }
@@ -317,8 +313,10 @@ export class AVSrouter {
         this.removePaketCommiter(id, type, paketcommitter)
         streamreader.releaseLock()
         if (streamwriter) streamwriter.releaseLock()
-        stream.readable.cancel()
-        stream.writable.close()
+        /* await stream.writable.close()
+        console.log('mark prob 4')
+        await stream.readable.cancel()
+        console.log('mark prob 6')*/ // not needed
       } catch (error) {
         console.log('error cleanup processIncomingStream', error)
       }
@@ -329,36 +327,49 @@ export class AVSrouter {
       const id = args.id
       const type = args.type
       const parseHelper = args.parseHelper
-      const streamwriter = await stream.writable.getWriter()
+      let streamwriter
       let writeChunk
       try {
+        streamwriter = await stream.writable.getWriter()
         // writing code
         let waitpaketstart = 1
-        writeChunk = (chunk) => {
-          if (chunk.paket)
-          {
-            if (waitpaketstart) {
-              if (chunk.paketstart && chunk.keyframe)
-                waitpaketstart = 0 // we need to start with complete pakets and a keyframe!
-              else return
+        let writefailedres = null
+        const writefailed = new Promise((res) => {
+          writefailedres = res
+        })
+        writeChunk = async (chunk) => {
+          try {
+            if (chunk.paket) {
+              if (waitpaketstart) {
+                if (chunk.paketstart && chunk.keyframe)
+                  waitpaketstart = 0 // we need to start with complete pakets and a keyframe!
+                else return
+              }
+              await streamwriter.write(chunk.paket)
+            } else if (chunk.message) {
+              // message are always passed, no delay there
+              await streamwriter.write(chunk.message)
             }
-            streamwriter.write(chunk.paket)
-          } else if (chunk.message) { // message are always passed, no delay there
-            streamwriter.write(chunk.message)
+          } catch (error) {
+            if (writefailedres) writefailedres()
+            running = false
           }
         }
         this.registerStream(id, type, writeChunk)
-        while (running) {
-          while (parseHelper.hasMessageOrPaket()) {
-            // only messages for controlling
-            const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
-            // TODO implement
-          }
-          const readres = await streamreader.read()
+        const reading = async () => {
+          while (running) {
+            while (parseHelper.hasMessageOrPaket()) {
+              // only messages for controlling
+              const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
+              // TODO implement
+            }
+            const readres = await streamreader.read()
 
-          if (readres.value) parseHelper.addPaket(readres.value)
-          if (readres.done) break
+            if (readres.value) parseHelper.addPaket(readres.value)
+            if (readres.done) break
+          }
         }
+        await Promise.race([await reading(), writefailed])
       } catch (error) {
         console.log('error processOutgoingStream', error)
       }
@@ -367,8 +378,10 @@ export class AVSrouter {
 
         streamreader.releaseLock()
         streamwriter.releaseLock()
-        stream.readable.cancel()
-        stream.writable.close()
+        /* await stream.readable.cancel()
+        console.log('mark prob 10')
+        await stream.writable.close()
+        console.log('mark prob 11') */ // not needed
       } catch (error) {
         console.log('error cleanup processIncomingStream', error)
       }
