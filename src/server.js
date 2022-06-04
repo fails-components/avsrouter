@@ -40,20 +40,32 @@ console.log(
 )
 console.log('start Server')
 
-let http3server
+let http3serverv4
+let http3serverv6
 try {
-  http3server = new Http3Server({
+  const secret = 'mysecretveryvery' // TODO replace with random stuff
+  http3serverv4 = new Http3Server({
     port: 8081,
     host: '0.0.0.0',
-    secret: 'mysecretveryvery', // TODO replace with random stuff
+    secret, 
+    cert: certificate.cert, // unclear if it is the correct format
+    privKey: certificate.private
+  })
+  http3serverv6 = new Http3Server({
+    port: 8081,
+    host: '::',
+    secret, 
     cert: certificate.cert, // unclear if it is the correct format
     privKey: certificate.private
   })
   certificate = null
-  router.runServerLoop(http3server)
+  router.runServerLoop(http3serverv4)
+  router.runServerLoop(http3serverv6)
 
-  http3server.startServer() // you can call destroy to remove the server
-  console.log('server started')
+  http3serverv4.startServer() // you can call destroy to remove the server
+  console.log('server started ipv4')
+  http3serverv6.startServer() // you can call destroy to remove the server
+  console.log('server started ipv6')
 } catch (error) {
   console.log('http3error', error)
 }
