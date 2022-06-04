@@ -51,21 +51,21 @@ try {
     cert: certificate.cert, // unclear if it is the correct format
     privKey: certificate.private
   })
-  http3serverv6 = new Http3Server({
+  /* http3serverv6 = new Http3Server({
     port: 8081,
     host: '::',
     secret, 
     cert: certificate.cert, // unclear if it is the correct format
     privKey: certificate.private
-  })
+  }) */
   certificate = null
   router.runServerLoop(http3serverv4)
-  router.runServerLoop(http3serverv6)
+  // router.runServerLoop(http3serverv6)
 
   http3serverv4.startServer() // you can call destroy to remove the server
   console.log('server started ipv4')
-  http3serverv6.startServer() // you can call destroy to remove the server
-  console.log('server started ipv6')
+ /* http3serverv6.startServer() // you can call destroy to remove the server
+  console.log('server started ipv6') */
 } catch (error) {
   console.log('http3error', error)
 }
