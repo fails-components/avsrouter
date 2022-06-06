@@ -1,6 +1,7 @@
 import {
   serialize as BSONserialize,
-  deserialize as BSONdeserialize
+  deserialize as BSONdeserialize,
+  Decimal128
 } from 'bson'
 
 class ParseHelper {
@@ -96,18 +97,24 @@ class ParseHelper {
                 const hdrflags = wdv.getUint8(paketpos + 16)
                 keyframe = !!(hdrflags & 1)
               }
+              let timestamp
+              if (hdrlen >= 16) {
+                timestamp = wdv.getBigInt64(paketpos + 8)
+              }
               const towrite = Math.min(
                 payloadlen + hdrlen,
                 workpaket.byteLength - paketpos
               )
               this.outputqueue.push({
                 paketstart: true,
+                paketend: false,
                 paket: new Uint8Array(
                   workpaket.buffer,
                   workpaket.byteOffset + paketpos,
                   towrite
                 ),
-                keyframe
+                keyframe,
+                timestamp
               })
               if (towrite < payloadlen + hdrlen) {
                 this.outpaketpos = towrite
@@ -124,6 +131,7 @@ class ParseHelper {
         )
         this.outputqueue.push({
           paketstart: false,
+          paketend: this.outpaketlen === this.outpaketpos + towrite,
           paket: new Uint8Array(
             workpaket.buffer,
             workpaket.byteOffset + paketpos,
@@ -152,35 +160,120 @@ export class AVSrouter {
       this.realms[id] = {
         audio: {
           listeners: new Set(),
-          source: null,
-          messages: {}
+          sources: new Set(),
+          messages: {},
+          qualities: {} // available qualties and last incoming paket
         },
         video: {
           listeners: new Set(),
-          source: null,
-          messages: {}
+          sources: new Set(),
+          messages: {},
+          qualities: {} // available qualties and last incoming paket
         },
         screen: {
           listeners: new Set(),
-          source: null,
-          messages: {}
+          sources: new Set(),
+          messages: {},
+          qualities: {} // available qualties and last incoming paket
         }
       }
     }
     return this.realms[id][type]
   }
 
-  getPaketCommiter(id, type) {
+  getFixQuality(id, type) {
     const realm = this.getRealmObj(id, type)
-    return (paket) => {
-      const listeners = realm.listeners
-      listeners.forEach((wc) => {
-        wc(paket)
-      })
+    return (curqual) => {
+      const now = Date.now()
+      if (now - realm.qualities[curqual] < 1000) return curqual
+      // we prefer a higher quality if in doubt
+      let newqual = -1
+      for (const qual in realm.qualities) {
+        if (
+          now - realm.qualities[qual] < 1000 &&
+          qual > curqual &&
+          (qual < newqual || newqual === -1)
+        ) {
+          newqual = qual
+        }
+      }
+      if (newqual !== -1) return newqual
+      // a lower will also do
+      for (const qual in realm.qualities) {
+        if (
+          now - realm.qualities[qual] < 1000 &&
+          qual < curqual &&
+          qual > newqual
+        ) {
+          newqual = qual
+        }
+      }
+      if (newqual !== -1) return newqual
+      return curqual
     }
   }
 
-  sendBson(tosend, sendmeth) {
+  getIncreaseQual(id, type) {
+    const realm = this.getRealmObj(id, type)
+    return (curqual) => {
+      const now = Date.now()
+      // we prefer a higher quality if in doubt
+      let newqual = -1
+      for (const qual in realm.qualities) {
+        if (
+          now - realm.qualities[qual] < 1000 &&
+          qual > curqual &&
+          (qual < newqual || newqual === -1)
+        ) {
+          newqual = qual
+        }
+      }
+      if (newqual !== -1) curqual = newqual
+      return curqual
+    }
+  }
+
+  getDecreaseQual(id, type) {
+    const realm = this.getRealmObj(id, type)
+    return (curqual) => {
+      let newqual = -1
+      // we like a lower lower will also do
+      for (const qual in realm.qualities) {
+        if (
+          now - realm.qualities[qual] < 1000 &&
+          qual < curqual &&
+          qual > newqual
+        ) {
+          newqual = qual
+        }
+      }
+      if (newqual !== -1) return newqual
+      return curqual
+    }
+  }
+
+  getSuspendQuality(id, type, quality) {
+    const realm = this.getRealmObj(id, type)
+    return () => {
+      realm.qualities[quality] = 0 // set time to zero
+    }
+  }
+
+  getPaketCommiter(id, type, quality) {
+    const realm = this.getRealmObj(id, type)
+    const commi = (paket) => {
+      const listeners = realm.listeners
+      listeners.forEach((wc) => {
+        wc(paket, quality)
+      })
+      realm.qualities[quality] = Date.now()
+    }
+
+    realm.sources.add(commi)
+    return commi
+  }
+
+  async sendBson(tosend, sendmeth) {
     const bson = BSONserialize(tosend)
     const hdrlen = 6
     const headerbuffer = new ArrayBuffer(hdrlen)
@@ -189,18 +282,20 @@ export class AVSrouter {
     hdrdv.setUint32(hdrpos, bson.length + 6)
     hdrpos += 4
     hdrdv.setUint16(hdrpos, 0)
-    sendmeth({ message: new Uint8Array(headerbuffer) })
-    sendmeth({ message: bson })
+    const send1 = sendmeth({ message: new Uint8Array(headerbuffer) })
+    const send2 = sendmeth({ message: bson })
+    await Promise.all([send1, send2])
   }
 
-  getCommitAndStoreMessage(id, type) {
+  getCommitAndStoreMessage(id, type, quality) {
     return (message) => {
       const realm = this.getRealmObj(id, type)
-      realm.messages[message.task] = message
+      if (!realm.messages[quality]) realm.messages[quality] = {}
+      realm.messages[quality][message.task] = message
       const listeners = realm.listeners
       this.sendBson(message, (buf) => {
         listeners.forEach((wc) => {
-          wc(buf)
+          wc(buf, quality)
         })
       })
     }
@@ -208,8 +303,8 @@ export class AVSrouter {
 
   removePaketCommiter(id, type, source) {
     const realm = this.getRealmObj(id, type)
-    if (realm.source === source) {
-      realm.source = null
+    if (realm.sources.has(source)) {
+      realm.sources.delete(source)
       this.cleanUpRealm(id)
     }
   }
@@ -225,8 +320,18 @@ export class AVSrouter {
   registerStream(id, type, listener) {
     const realm = this.getRealmObj(id, type)
     realm.listeners.add(listener)
-    for (let mess in realm.messages) {
-      this.sendBson(realm.messages[mess], listener)
+  }
+
+  getSendInitialMessages(id, type, sender) {
+    const realm = this.getRealmObj(id, type)
+    return async (quality) => {
+      const messages = realm.messages[quality]
+      if (messages) {
+        const proms = Object.keys(messages).map(
+          async (mess) => await this.sendBson(messages[mess], sender)
+        )
+        await Promise.all(proms)
+      }
     }
   }
 
@@ -234,11 +339,11 @@ export class AVSrouter {
     const realm = this.realms[id]
     if (
       realm.audio.listeners.size === 0 &&
-      !realm.audio.source &&
+      !realm.audio.sources.size === 0 &&
       realm.video.listeners.size === 0 &&
-      !realm.video.source &&
+      !realm.video.sources.size === 0 &&
       realm.screen.listeners.size === 0 &&
-      realm.screen.source
+      !realm.screen.sources.size === 0
     )
       delete this.realms[id]
   }
@@ -278,10 +383,55 @@ export class AVSrouter {
       const id = args.id
       const type = args.type
       const parseHelper = args.parseHelper
+      const quality = args.quality
 
-      const paketcommitter = this.getPaketCommiter(id, type)
-      const commitAndStoreMessage = this.getCommitAndStoreMessage(id, type)
+      const paketcommitter = this.getPaketCommiter(id, type, quality)
+      const commitAndStoreMessage = this.getCommitAndStoreMessage(
+        id,
+        type,
+        quality
+      )
+      const suspendQuality = this.getSuspendQuality(id, type, quality)
+
       let streamwriter
+
+      const writeStat = async (chunk) => {
+        try {
+          if (chunk.message) {
+            // message are always passed, no delay there
+            await streamwriter.write(chunk.message)
+          }
+        } catch (error) {
+          console.log('writeStat failed', error)
+        }
+      }
+
+      const sendStatBson = async (chunk) => {
+        await this.sendBson(chunk, writeStat)
+      }
+
+      let curpaketsize
+      const paketstat = (paket) => {
+        if (paket.paketstart) {
+          curpaketsize = paket.paket.byteLength
+          sendStatBson({
+            task: 'start',
+            time: Date.now(),
+            timestamp: new Decimal128(paket.timestamp.toString())
+          })
+        } else if (paket.paketend) {
+          curpaketsize += paket.paket.byteLength
+          sendStatBson({
+            task: 'end',
+            time: Date.now(),
+            size: curpaketsize
+          })
+          curpaketsize = 0
+        } else {
+          curpaketsize += paket.paket.byteLength
+        }
+      }
+
       try {
         streamwriter = await stream.writable.getWriter()
 
@@ -289,14 +439,18 @@ export class AVSrouter {
           // first the paket, as they are processed partially
           while (parseHelper.hasMessageOrPaket()) {
             const chunk = parseHelper.getMessageOrPaket()
-            if (chunk.paket)
+            if (chunk.paket) {
+              paketstat(chunk)
               // maybe also test if arraybuffer
               paketcommitter(chunk)
-            else {
+            } else {
               let store = false
               if (chunk.task && chunk.task === 'decoderconfig') {
                 store = true
                 console.log('decoderconfig', chunk)
+              } else if (chunk.task && chunk.task === 'suspendQuality') {
+                store = false
+                suspendQuality()
               }
               if (store) commitAndStoreMessage(chunk)
             }
@@ -327,25 +481,85 @@ export class AVSrouter {
       const id = args.id
       const type = args.type
       const parseHelper = args.parseHelper
+      let curqual = -1
+      let nextqual = -1 // tells us that we should change on the next keyframe
+      let lastpaket = 0
       let streamwriter
       let writeChunk
+      const fixQuality = this.getFixQuality(id, type)
+      const increaseQual = this.getIncreaseQual(id, type)
+      const decreaseQual = this.getDecreaseQual(id, type)
+
+      let qualchangeStor = []
+
+      let outgoingbuffer = 0
+
       try {
         streamwriter = await stream.writable.getWriter()
+        const sendInitialMessages = this.getSendInitialMessages(
+          id,
+          type,
+          async (paket) => {
+            await streamwriter.write(paket.message)
+          }
+        )
         // writing code
         let waitpaketstart = 1
         let writefailedres = null
+        let inpaket = false
         const writefailed = new Promise((res) => {
           writefailedres = res
         })
-        writeChunk = async (chunk) => {
+        writeChunk = async (chunk, quality) => {
+          const now = Date.now()
+          if (now - lastpaket > 1000) {
+            // recheck quality
+            const newqual = fixQuality(curqual)
+            if (newqual !== curqual) {
+              waitpaketstart = 1 // we need a key frame
+              curqual = newqual
+              console.log('new quality', curqual)
+              // if changed may be emit an information for client ? TODO
+              sendInitialMessages(curqual) // no await!
+            }
+          }
+          if (
+            quality === nextqual &&
+            ((chunk.paketstart && chunk.keyframe) || qualchangeStor.length > 0)
+          ) {
+            if (!inpaket) {
+              // we can change
+              curqual = nextqual
+              nextqual = -1
+              sendInitialMessages(curqual) // init the decoder // no await
+              for (const el of qualchangeStor) {
+                inpaket = true
+                if (chunk.paketend) inpaket = false
+                streamwriter.write(el.paket) // no await
+              }
+              qualchangeStor = []
+            } else {
+              qualchangeStor.push(chunk)
+            }
+          }
+          // if we decrease quality we should only send the current paket and stop then
+          if (nextqual !== -1 && nextqual < curqual && !inpaket) return
+          if (quality !== curqual) return // not the subscribed quality
+          // do not hold more than 1 MB in buffers
+          if (!inpaket && outgoingbuffer > 1000000) return
           try {
             if (chunk.paket) {
+              lastpaket = now
               if (waitpaketstart) {
                 if (chunk.paketstart && chunk.keyframe)
                   waitpaketstart = 0 // we need to start with complete pakets and a keyframe!
                 else return
               }
+              inpaket = true
+              if (chunk.paketend) inpaket = false
+              outgoingbuffer += chunk.paket.byteLength
               await streamwriter.write(chunk.paket)
+              outgoingbuffer -= chunk.paket.byteLength
             } else if (chunk.message) {
               // message are always passed, no delay there
               await streamwriter.write(chunk.message)
@@ -361,7 +575,18 @@ export class AVSrouter {
             while (parseHelper.hasMessageOrPaket()) {
               // only messages for controlling
               const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
-              // TODO implement
+              if (message.task === 'incQual') {
+                const newqual = increaseQual(curqual)
+                if (newqual !== curqual) {
+                  nextqual = newqual
+                }
+              } else if (message.task === 'decQual') {
+                const newqual = decreaseQual(curqual)
+                if (newqual !== curqual) {
+                  nextqual = newqual
+                  await sendInitialMessages(curqual)
+                }
+              }
             }
             const readres = await streamreader.read()
 
@@ -401,6 +626,7 @@ export class AVSrouter {
               message.command == 'configure' &&
               (message.dir === 'incoming' || message.dir === 'outgoing') &&
               message.id &&
+              (message.dir === 'outgoing' || message.quality) &&
               (message.type === 'video' ||
                 message.type === 'audio' ||
                 message.type === 'screen')
@@ -412,7 +638,8 @@ export class AVSrouter {
                   streamReader,
                   parseHelper,
                   id: message.id,
-                  type: message.type
+                  type: message.type,
+                  quality: message.quality
                 })
                 break
               } else if (message.dir === 'outgoing') {
