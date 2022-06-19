@@ -113,6 +113,7 @@ class ParseHelper {
                   workpaket.byteOffset + paketpos,
                   towrite
                 ),
+                paketremain: payloadlen + hdrlen - towrite,
                 keyframe,
                 timestamp
               })
@@ -132,6 +133,7 @@ class ParseHelper {
         this.outputqueue.push({
           paketstart: false,
           paketend: this.outpaketlen === this.outpaketpos + towrite,
+          paketremain: this.outpaketlen - this.outpaketpos - towrite,
           paket: new Uint8Array(
             workpaket.buffer,
             workpaket.byteOffset + paketpos,
@@ -186,12 +188,12 @@ export class AVSrouter {
     return (curqual) => {
       const now = Date.now()
       if (now - realm.qualities[curqual] < 1000) return curqual
-      // we prefer a higher quality if in doubt
+      // we prefer a higher quality or equal if in doubt
       let newqual = -1
       for (const qual in realm.qualities) {
         if (
           now - realm.qualities[qual] < 1000 &&
-          qual > curqual &&
+          qual >= curqual && // include = since we use it also for an id switch
           (qual < newqual || newqual === -1)
         ) {
           newqual = qual
@@ -236,6 +238,7 @@ export class AVSrouter {
   getDecreaseQual(id, type) {
     const realm = this.getRealmObj(id, type)
     return (curqual) => {
+      const now = Date.now()
       let newqual = -1
       // we like a lower lower will also do
       for (const qual in realm.qualities) {
@@ -264,7 +267,7 @@ export class AVSrouter {
     const commi = (paket) => {
       const listeners = realm.listeners
       listeners.forEach((wc) => {
-        wc(paket, quality)
+        wc(paket, id, quality)
       })
       realm.qualities[quality] = Date.now()
     }
@@ -295,7 +298,7 @@ export class AVSrouter {
       const listeners = realm.listeners
       this.sendBson(message, (buf) => {
         listeners.forEach((wc) => {
-          wc(buf, quality)
+          wc(buf, id, quality)
         })
       })
     }
@@ -476,19 +479,21 @@ export class AVSrouter {
       }
     }
     const processOutgoingStream = async (args) => {
+      // TODO check AUTHENTIFICATION
       const streamreader = args.streamReader
       const stream = args.stream
-      const id = args.id
+      let curid = args.id
+      let newid = undefined
       const type = args.type
       const parseHelper = args.parseHelper
       let curqual = -1
-      let nextqual = -1 // tells us that we should change on the next keyframe
+      let nextqual = undefined // tells us that we should change on the next keyframe
       let lastpaket = 0
       let streamwriter
       let writeChunk
-      const fixQuality = this.getFixQuality(id, type)
-      const increaseQual = this.getIncreaseQual(id, type)
-      const decreaseQual = this.getDecreaseQual(id, type)
+      let fixQuality = this.getFixQuality(curid, type)
+      let increaseQual = this.getIncreaseQual(curid, type)
+      let decreaseQual = this.getDecreaseQual(curid, type)
 
       let qualchangeStor = []
 
@@ -496,21 +501,27 @@ export class AVSrouter {
 
       try {
         streamwriter = await stream.writable.getWriter()
-        const sendInitialMessages = this.getSendInitialMessages(
-          id,
-          type,
-          async (paket) => {
+        const sIMsend = async (paket) => {
+          try {
             await streamwriter.write(paket.message)
+          } catch (error) {
+            console.log('error in sendInitialMessages 1', streamwriter)
           }
+        }
+        let sendInitialMessages = this.getSendInitialMessages(
+          curid,
+          type,
+          sIMsend
         )
         // writing code
         let waitpaketstart = 1
         let writefailedres = null
         let inpaket = false
+        let paketremain = 0
         const writefailed = new Promise((res) => {
           writefailedres = res
         })
-        writeChunk = async (chunk, quality) => {
+        writeChunk = async (chunk, pid, quality) => {
           const now = Date.now()
           if (now - lastpaket > 1000) {
             // recheck quality
@@ -519,18 +530,44 @@ export class AVSrouter {
               waitpaketstart = 1 // we need a key frame
               curqual = newqual
               console.log('new quality', curqual)
+              if (paketremain > 0) {
+                // we finish the package with garbage, intentionelle uninitalized
+                const fakearray = new Uint8Array(new ArrayBuffer(paketremain))
+                for (let i = 0; i < paketremain - 1; i++) fakearray[i] = 0
+                fakearray[paketremain - 1] = 1
+                streamwriter.write(fakearray)
+                inpaket = false
+                paketremain = 0
+              }
               // if changed may be emit an information for client ? TODO
               sendInitialMessages(curqual) // no await!
             }
           }
           if (
-            quality === nextqual &&
+            (nextqual || newid) &&
+            quality === (nextqual || curqual) &&
+            (pid === (newid || curid) || newid === 'sleep') &&
             ((chunk.paketstart && chunk.keyframe) || qualchangeStor.length > 0)
           ) {
             if (!inpaket) {
               // we can change
-              curqual = nextqual
-              nextqual = -1
+              if (nextqual) {
+                curqual = nextqual
+                nextqual = undefined
+              }
+              if (newid) {
+                this.unregisterStream(curid, type, writeChunk)
+                sendInitialMessages = this.getSendInitialMessages(
+                  newid,
+                  type,
+                  sIMsend
+                )
+                fixQuality = this.getFixQuality(newid, type)
+                increaseQual = this.getIncreaseQual(newid, type)
+                decreaseQual = this.getDecreaseQual(newid, type)
+                curid = newid
+                newid = undefined
+              }
               sendInitialMessages(curqual) // init the decoder // no await
               for (const el of qualchangeStor) {
                 inpaket = true
@@ -539,12 +576,12 @@ export class AVSrouter {
               }
               qualchangeStor = []
             } else {
-              qualchangeStor.push(chunk)
+              if (newid !== 'sleep') qualchangeStor.push(chunk)
             }
           }
           // if we decrease quality we should only send the current paket and stop then
-          if (nextqual !== -1 && nextqual < curqual && !inpaket) return
-          if (quality !== curqual) return // not the subscribed quality
+          if (nextqual && nextqual < curqual && !inpaket) return
+          if (quality !== curqual || pid !== curid) return // not the subscribed quality or id
           // do not hold more than 1 MB in buffers
           if (!inpaket && outgoingbuffer > 1000000) return
           try {
@@ -557,6 +594,9 @@ export class AVSrouter {
               }
               inpaket = true
               if (chunk.paketend) inpaket = false
+              if (chunk.paketremain) paketremain = chunk.paketremain
+              else paketremain = 0
+
               outgoingbuffer += chunk.paket.byteLength
               await streamwriter.write(chunk.paket)
               outgoingbuffer -= chunk.paket.byteLength
@@ -569,7 +609,7 @@ export class AVSrouter {
             running = false
           }
         }
-        this.registerStream(id, type, writeChunk)
+        this.registerStream(curid, type, writeChunk)
         const reading = async () => {
           while (running) {
             while (parseHelper.hasMessageOrPaket()) {
@@ -579,13 +619,29 @@ export class AVSrouter {
                 const newqual = increaseQual(curqual)
                 if (newqual !== curqual) {
                   nextqual = newqual
+                  qualchangeStor = [] // reset any already ongoing change
                 }
               } else if (message.task === 'decQual') {
                 const newqual = decreaseQual(curqual)
                 if (newqual !== curqual) {
                   nextqual = newqual
-                  await sendInitialMessages(curqual)
+                  qualchangeStor = [] // reset any already ongoing change
                 }
+              } else if (message.task === 'chgId' && curid !== message.id) {
+                console.log('incoming change', curid, message.id)
+
+                if (message.id) {
+                  console.log('change to', message.id)
+                  // TODO check AUTHENTIFICATION
+                  newid = message.id
+                  const checkqual = fixQuality(curqual)
+                  if (checkqual !== curqual) nextqual = checkqual
+
+                  this.registerStream(newid, type, writeChunk)
+                } else {
+                  newid = 'sleep'
+                }
+                qualchangeStor = [] // reset any already ongoing change
               }
             }
             const readres = await streamreader.read()
@@ -599,7 +655,7 @@ export class AVSrouter {
         console.log('error processOutgoingStream', error)
       }
       try {
-        this.unregisterStream(id, type, writeChunk)
+        this.unregisterStream(curid, type, writeChunk)
 
         streamreader.releaseLock()
         streamwriter.releaseLock()
@@ -653,18 +709,20 @@ export class AVSrouter {
                 break
               }
             } else {
-              console.log('first message', message)
-              throw new Error(
-                'First message needs to be a configure either incoming or outgoing'
-              )
+              console.log('first message ignore close', message)
+              streamReader.releaseLock()
+              stream.readable.cancel()
+              break
             }
           }
         }
+        console.log('processStream exited')
       } catch (error) {
         console.log('error in processStream', error)
       }
     }
 
+    let bidicount = 0
     // now, we process every incoming bidistream and see what it wants
     try {
       const bidiReader = session.incomingBidirectionalStreams.getReader()
@@ -675,7 +733,8 @@ export class AVSrouter {
           break
         }
         if (bidistr.value) {
-          console.log('incoming bidirectional stream')
+          bidicount++
+          console.log('incoming bidirectional stream', bidicount)
           processStream(bidistr.value)
         }
       }
