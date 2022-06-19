@@ -503,7 +503,7 @@ export class AVSrouter {
         streamwriter = await stream.writable.getWriter()
         const sIMsend = async (paket) => {
           try {
-            await streamwriter.write(paket.message)
+            if (streamwriter) await streamwriter.write(paket.message)
           } catch (error) {
             console.log('error in sendInitialMessages 1', streamwriter)
           }
@@ -656,9 +656,12 @@ export class AVSrouter {
       }
       try {
         this.unregisterStream(curid, type, writeChunk)
-
+        if (nextid) this.unregisterStream(nextid, type, writeChunk)
+        
         streamreader.releaseLock()
+        streamreader = undefined
         streamwriter.releaseLock()
+        streamwriter = undefined
         /* await stream.readable.cancel()
         console.log('mark prob 10')
         await stream.writable.close()
