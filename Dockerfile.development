@@ -24,5 +24,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y clang-9 cmake 
 
 
 EXPOSE 8081/udp
+EXPOSE 8081
 
 #CMD [ "node", "src/server.js" ]

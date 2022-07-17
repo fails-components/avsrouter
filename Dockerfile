@@ -23,5 +23,6 @@ RUN --mount=type=secret,id=GH_TOKEN export GH_TOKEN=`cat /run/secrets/GH_TOKEN`;
 
 
 EXPOSE 8081/udp
+EXPOSE 8081
 
 #CMD [ "node", "src/server.js" ]

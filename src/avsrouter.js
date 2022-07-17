@@ -29,11 +29,13 @@ class ParseHelper {
       const reschunk = new ArrayBuffer(
         this.savedpaket.byteLength + paket.byteLength
       )
+      /*
       const srca = new Uint8Array(
         this.savedpaket.buffer,
         this.savedpaket.byteOffset,
         this.savedpaket.byteLength - this.readpos
       )
+      */
       workpaket = new Uint8Array(reschunk)
       for (let i = 0; i < this.savedpaket.length; i++) {
         workpaket[i] = this.savedpaket[i]
@@ -48,7 +50,7 @@ class ParseHelper {
     }
 
     let paketpos = 0
-    let wdv = new DataView(
+    const wdv = new DataView(
       workpaket.buffer,
       workpaket.byteOffset,
       workpaket.byteLength
@@ -377,7 +379,7 @@ export class AVSrouter {
     session.closed.finally((reason) => {
       console.log('server session was closed', reason)
     })
-    let authorized = false // we are not yet authorized
+    // const authorized = false // we are not yet authorized
 
     // process the type incoming stream
     const processIncomingStream = async (args) => {
@@ -438,6 +440,7 @@ export class AVSrouter {
       try {
         streamwriter = await stream.writable.getWriter()
 
+        // eslint-disable-next-line no-unmodified-loop-condition
         while (running) {
           // first the paket, as they are processed partially
           while (parseHelper.hasMessageOrPaket()) {
@@ -473,21 +476,21 @@ export class AVSrouter {
         /* await stream.writable.close()
         console.log('mark prob 4')
         await stream.readable.cancel()
-        console.log('mark prob 6')*/ // not needed
+        console.log('mark prob 6') */ // not needed
       } catch (error) {
         console.log('error cleanup processIncomingStream', error)
       }
     }
     const processOutgoingStream = async (args) => {
       // TODO check AUTHENTIFICATION
-      const streamreader = args.streamReader
+      let streamreader = args.streamReader
       const stream = args.stream
       let curid = args.id
-      let newid = undefined
+      let newid
       const type = args.type
       const parseHelper = args.parseHelper
       let curqual = -1
-      let nextqual = undefined // tells us that we should change on the next keyframe
+      let nextqual // tells us that we should change on the next keyframe
       let lastpaket = 0
       let streamwriter
       let writeChunk
@@ -518,8 +521,8 @@ export class AVSrouter {
         let writefailedres = null
         let inpaket = false
         let paketremain = 0
-        const writefailed = new Promise((res) => {
-          writefailedres = res
+        const writefailed = new Promise((resolve) => {
+          writefailedres = resolve
         })
         writeChunk = async (chunk, pid, quality) => {
           const now = Date.now()
@@ -611,6 +614,7 @@ export class AVSrouter {
         }
         this.registerStream(curid, type, writeChunk)
         const reading = async () => {
+          // eslint-disable-next-line no-unmodified-loop-condition
           while (running) {
             while (parseHelper.hasMessageOrPaket()) {
               // only messages for controlling
@@ -656,8 +660,8 @@ export class AVSrouter {
       }
       try {
         this.unregisterStream(curid, type, writeChunk)
-        if (nextid) this.unregisterStream(nextid, type, writeChunk)
-        
+        if (newid) this.unregisterStream(newid, type, writeChunk)
+
         streamreader.releaseLock()
         streamreader = undefined
         streamwriter.releaseLock()
@@ -675,6 +679,7 @@ export class AVSrouter {
       try {
         const streamReader = await stream.readable.getReader()
         const parseHelper = new ParseHelper()
+        // eslint-disable-next-line no-unmodified-loop-condition
         while (running) {
           const paket = await streamReader.read()
           if (paket.value) parseHelper.addPaket(paket.value)
@@ -682,7 +687,7 @@ export class AVSrouter {
           if (parseHelper.hasMessageOrPaket()) {
             const message = parseHelper.getMessageOrPaket()
             if (
-              message.command == 'configure' &&
+              message.command === 'configure' &&
               (message.dir === 'incoming' || message.dir === 'outgoing') &&
               message.id &&
               (message.dir === 'outgoing' || message.quality) &&
@@ -718,6 +723,7 @@ export class AVSrouter {
               break
             }
           }
+          console.log('paket loop end')
         }
         console.log('processStream exited')
       } catch (error) {
@@ -729,6 +735,7 @@ export class AVSrouter {
     // now, we process every incoming bidistream and see what it wants
     try {
       const bidiReader = session.incomingBidirectionalStreams.getReader()
+      // eslint-disable-next-line no-unmodified-loop-condition
       while (running) {
         const bidistr = await bidiReader.read()
         if (bidistr.done) {

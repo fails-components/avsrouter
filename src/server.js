@@ -1,10 +1,9 @@
 import { Http3Server } from '@fails-components/webtransport'
+import { WebTransportSocketServer } from '@fails-components/webtransport-ponyfill-websocket'
 import { generateWebTransportCertificate } from './certificate.js'
 import { existsSync, readFileSync, writeFile } from 'node:fs'
-import { TransformStream } from 'node:stream/web'
 import { AVSrouter } from './avsrouter.js'
-
-
+import { createServer as createServerHttp1 } from 'http'
 
 const router = new AVSrouter()
 
@@ -27,7 +26,7 @@ if (!certificate) {
   certificate = await generateWebTransportCertificate(attrs, {
     days: 13
   })
-  writeFile('./certificatecache.json', JSON.stringify(certificate),(err)=>{
+  writeFile('./certificatecache.json', JSON.stringify(certificate), (err) => {
     console.log('write certificate cache error', err)
   })
 }
@@ -38,7 +37,7 @@ console.log(
   certificate.hash,
   new Uint8Array(certificate.hash)
 )
-console.log('start Server')
+console.log('start http/3 Server')
 
 let http3serverv4
 let http3serverv6
@@ -47,7 +46,7 @@ try {
   http3serverv4 = new Http3Server({
     port: 8081,
     host: '0.0.0.0',
-    secret, 
+    secret,
     cert: certificate.cert, // unclear if it is the correct format
     privKey: certificate.private
   })
@@ -63,9 +62,24 @@ try {
   // router.runServerLoop(http3serverv6)
 
   http3serverv4.startServer() // you can call destroy to remove the server
-  console.log('server started ipv4')
- /* http3serverv6.startServer() // you can call destroy to remove the server
+  console.log('http3 server started ipv4')
+  /* http3serverv6.startServer() // you can call destroy to remove the server
   console.log('server started ipv6') */
 } catch (error) {
   console.log('http3error', error)
+}
+
+try {
+  console.log('start http/1 Server')
+  const server = createServerHttp1()
+  const wtsserver = new WebTransportSocketServer({
+    server,
+    port: 8081
+  })
+
+  router.runServerLoop(wtsserver)
+  wtsserver.startServer() // actually it is just listen....
+  console.log('http1 server started ipv4')
+} catch (error) {
+  console.log('websocket error', error)
 }
