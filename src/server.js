@@ -5,8 +5,6 @@ import { existsSync, readFileSync, writeFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
 import { createServer as createServerHttp1 } from 'http'
 
-
-
 let certificate = null
 
 if (existsSync('./certificatecache.json')) {
