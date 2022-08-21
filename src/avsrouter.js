@@ -3,6 +3,8 @@ import {
   deserialize as BSONdeserialize,
   Decimal128
 } from 'bson'
+import jwt from 'jsonwebtoken'
+import axios from 'axios'
 
 class ParseHelper {
   constructor() {
@@ -157,6 +159,86 @@ class ParseHelper {
 export class AVSrouter {
   constructor(args) {
     this.realms = {}
+    this.primaryRealms = []
+    this.spki = args.spki
+    this.sessionCount = 0
+    this.setupDispatcher()
+  }
+
+  setupDispatcher() {
+    if (!process.env.AVSCONFIG) throw new Error('no avsconfig')
+    const config = process.env.AVSCONFIG.split('|')
+    if (config.length < 3) throw new Error('wrong avsconfig')
+    this.region = config[0]
+    if (typeof this.region !== 'string' || this.region.length < 3)
+      throw new Error('wrong avsconfig')
+    if (typeof config[1] !== 'string' || config[1].length < 8)
+      throw new Error('wrong avsconfig hmac')
+    const hmac = Buffer.from(config[1], 'base64')
+    try {
+      this.dispatcher = new URL(config[2])
+    } catch (error) {
+      throw new Error('Wrong url for disptacher ' + error)
+    }
+
+    if (!process.env.AVSMAXCLIENTS) throw new Error('AVSMAXCLIENTS missing')
+    if (!process.env.AVSMAXREALMS) throw new Error('AVSMAXREALMS missing')
+    if (!process.env.AVSROUTERURL) throw new Error('AVSROUTERURL missing')
+    if (!process.env.AVSROUTERWSURL) throw new Error('AVSROUTERWSURL missing')
+
+    axios.defaults.baseURL = config[2]
+    this.axiosConfig = () => {
+      const token = jwt.sign({ region: this.region }, hmac, {
+        expiresIn: '30s',
+        keyid: this.region,
+        algorithm: 'HS512'
+      })
+      const config = {}
+      config.headers = { authorization: 'Bearer ' + token }
+      return config
+    }
+    // we need to report the dispatcher on a regular interval
+    let updateid
+    const updateDispatch = async () => {
+      if (updateid) {
+        clearTimeout(updateid)
+        updateid = null
+      }
+      try {
+        // ok first we have to gather all information
+        const clients = Object.keys(this.realms)
+        const realmInfo = clients.map((el) => {
+          const addr = el.split(':')
+          const realm = addr[0]
+          addr.shift()
+          return { realm, client: el, subClient: addr }
+        })
+        // now we count
+        const numRealms = new Set(realmInfo.map((el) => el.realm)).size
+
+        await axios.put(
+          '/router',
+          {
+            url: process.env.AVSROUTERURL,
+            wsurl: process.env.AVSROUTERWSURL,
+            spki: this.spki,
+            numClients: this.sessionCount,
+            maxClients: parseInt(process.env.AVSMAXCLIENTS, 10),
+            numRealms,
+            maxRealms: parseInt(process.env.AVSMAXREALMS, 10),
+            clients,
+            primaryRealms: this.primaryRealms // these are the realms where this router is primary for this region
+            // all routing for this realm and region should go through this router
+          },
+          { ...this.axiosConfig() }
+        )
+      } catch (error) {
+        console.log('problem updating dispatch info: ', error)
+      }
+
+      updateid = setTimeout(updateDispatch, 20 * 1000 + Math.random() * 5000)
+    }
+    updateDispatch()
   }
 
   getRealmObj(id, type) {
@@ -374,9 +456,17 @@ export class AVSrouter {
 
   async handleSession(session) {
     let running = true
-    await session.ready
+    this.sessionCount++
+    try {
+      await session.ready
+    } catch (error) {
+      this.sessionCount--
+      console.log('error session ready')
+      return
+    }
     console.log('session is ready')
     session.closed.finally((reason) => {
+      this.sessionCount--
       console.log('server session was closed', reason)
     })
     // const authorized = false // we are not yet authorized

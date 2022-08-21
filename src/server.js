@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
 import { createServer as createServerHttp1 } from 'http'
 
-const router = new AVSrouter()
+
 
 let certificate = null
 
@@ -13,6 +13,9 @@ if (existsSync('./certificatecache.json')) {
   certificate = JSON.parse(
     readFileSync('./certificatecache.json', { encoding: 'utf8', flag: 'r' })
   )
+  if (certificate.validUntil - 24 * 60 * 60 * 1000 < Date.now()) {
+    certificate = null // recreate, makes no sense to go online with a short lived cert
+  }
 }
 
 if (!certificate) {
@@ -31,6 +34,8 @@ if (!certificate) {
   })
 }
 
+const router = new AVSrouter({ spki: certificate.fingerprint })
+
 console.log('certificate hash ', certificate.fingerprint)
 console.log(
   'certificate hash buffer',
@@ -48,7 +53,8 @@ try {
     host: '0.0.0.0',
     secret,
     cert: certificate.cert, // unclear if it is the correct format
-    privKey: certificate.private
+    privKey: certificate.private,
+    spki: certificate.fingerprint
   })
   /* http3serverv6 = new Http3Server({
     port: 8081,

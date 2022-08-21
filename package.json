@@ -19,6 +19,7 @@
     "@babel/core": "^7.17.10",
     "@babel/eslint-parser": "^7.17.0",
     "cmake-js": "^6.3.0",
+    "dotenv": "^16.0.1",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^7.2.0",
     "eslint-config-standard": "^16.0.2",
@@ -27,6 +28,7 @@
     "eslint-plugin-prettier": "^3.4.1",
     "eslint-plugin-promise": "^4.3.1",
     "eslint-plugin-standard": "^4.1.0",
+    "nodemon": "^2.0.19",
     "prettier": "^2.4.1"
   },
   "keywords": [
@@ -42,9 +44,11 @@
   },
   "homepage": "https://github.com/fails-components/avsrouter#readme",
   "dependencies": {
-    "@fails-components/webtransport": "^0.0.5",
+    "@fails-components/webtransport": "^0.0.6",
     "@fails-components/webtransport-ponyfill-websocket": "^0.0.3",
+    "axios": "^0.27.2",
     "bson": "^4.6.3",
+    "jsonwebtoken": "^8.5.1",
     "selfsigned": "^2.0.1",
     "ws": "^8.8.1"
   }

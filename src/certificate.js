@@ -54,8 +54,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 import forge from 'node-forge'
-import { webcrypto as crypto } from 'crypto'
-import { X509Certificate } from 'crypto'
+import { webcrypto as crypto, X509Certificate } from 'crypto'
 
 const { pki, asn1, oids } = forge
 // taken from node-forge
@@ -120,9 +119,12 @@ function _dnToAsn1(obj) {
  * @return the ASN.1 object representing the date.
  */
 
+// eslint-disable-next-line camelcase
 const jan_1_1950 = new Date('1950-01-01T00:00:00Z')
+// eslint-disable-next-line camelcase
 const jan_1_2050 = new Date('2050-01-01T00:00:00Z')
 function _dateToAsn1(date) {
+  // eslint-disable-next-line camelcase
   if (date >= jan_1_1950 && date < jan_1_2050) {
     return asn1.create(
       asn1.Class.UNIVERSAL,
@@ -150,7 +152,7 @@ function _dateToAsn1(date) {
  */
 function _signatureParametersToAsn1(oid, params) {
   switch (oid) {
-    case oids['RSASSA-PSS']:
+    case oids['RSASSA-PSS']: {
       const parts = []
 
       if (params.hash.algorithmOid !== undefined) {
@@ -207,7 +209,7 @@ function _signatureParametersToAsn1(oid, params) {
       }
 
       return asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, parts)
-
+    }
     default:
       return asn1.create(asn1.Class.UNIVERSAL, asn1.Type.NULL, false, '')
   }
@@ -332,7 +334,7 @@ function toPositiveHex(hexString) {
 // the next is an edit of the selfsigned function reduced to the function necessary for webtransport
 export async function generateWebTransportCertificate(attrs, options) {
   try {
-    let keyPair = await crypto.subtle.generateKey(
+    const keyPair = await crypto.subtle.generateKey(
       {
         name: 'ECDSA',
         namedCurve: 'P-256'
@@ -355,7 +357,7 @@ export async function generateWebTransportCertificate(attrs, options) {
     cert.setSubject(attrs)
     cert.setIssuer(attrs)
 
-    let privateKey = crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
+    const privateKey = crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
     const publicKey = (cert.publicKey = await crypto.subtle.exportKey(
       'spki',
       keyPair.publicKey
@@ -392,7 +394,7 @@ export async function generateWebTransportCertificate(attrs, options) {
     oids['1.2.840.10045.4.3.2'] = 'ecdsa-with-sha256'
     oids['ecdsa-with-sha256'] = '1.2.840.10045.4.3.2'
 
-    cert.siginfo.algorithmOid = cert.signatureOid = '1.2.840.10045.4.3.2' //'ecdsa-with-sha256'
+    cert.siginfo.algorithmOid = cert.signatureOid = '1.2.840.10045.4.3.2' // 'ecdsa-with-sha256'
 
     cert.tbsCertificate = getTBSCertificate(cert)
     const encoded = Buffer.from(
@@ -430,6 +432,7 @@ export async function generateWebTransportCertificate(attrs, options) {
       }),
       cert: pemcert,
       hash: certhash,
+      validUntil: cert.validity.notAfter.getTime(),
       fingerprint: x509cert.fingerprint256
     }
 
