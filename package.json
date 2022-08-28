@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon -r dotenv/config src/server.js",
+    "dev": "nodemon -r dotenv/config src/server.js --ignore certificatecache.json --watch src/",
     "test": "run-s test:lint",
     "test:lint": "eslint ."
   },

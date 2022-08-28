@@ -8,11 +8,15 @@ import { createServer as createServerHttp1 } from 'http'
 let certificate = null
 
 if (existsSync('./certificatecache.json')) {
-  certificate = JSON.parse(
-    readFileSync('./certificatecache.json', { encoding: 'utf8', flag: 'r' })
-  )
-  if (certificate.validUntil - 24 * 60 * 60 * 1000 < Date.now()) {
-    certificate = null // recreate, makes no sense to go online with a short lived cert
+  try {
+    certificate = JSON.parse(
+      readFileSync('./certificatecache.json', { encoding: 'utf8', flag: 'r' })
+    )
+    if (certificate.validUntil - 24 * 60 * 60 * 1000 < Date.now()) {
+      certificate = null // recreate, makes no sense to go online with a short lived cert
+    }
+  } catch (error) {
+    console.log('error reading certifcate', error)
   }
 }
 
@@ -28,7 +32,7 @@ if (!certificate) {
     days: 13
   })
   writeFile('./certificatecache.json', JSON.stringify(certificate), (err) => {
-    console.log('write certificate cache error', err)
+    if (err) console.log('write certificate cache error', err)
   })
 }
 

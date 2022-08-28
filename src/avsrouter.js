@@ -160,6 +160,7 @@ export class AVSrouter {
   constructor(args) {
     this.realms = {}
     this.primaryRealms = []
+    this.keys = []
     this.spki = args.spki
     this.sessionCount = 0
     this.setupDispatcher()
@@ -239,6 +240,60 @@ export class AVSrouter {
       updateid = setTimeout(updateDispatch, 20 * 1000 + Math.random() * 5000)
     }
     updateDispatch()
+  }
+
+  async fetchKey(key) {
+    delete this.keys[key] // delete, important for key expiry
+    try {
+      const response = await axios.get('/key', {
+        ...this.axiosConfig(),
+        params: { kid: key }
+      })
+      if (!response.data || !response.data.key)
+        throw new Error('no key retrieved')
+      this.keys[key] = {}
+      this.keys[key].publicKey = response.data.key
+      this.keys[key].fetch = Date.now()
+    } catch (err) {
+      console.log('Error fetchKey', err)
+      throw new Error('no key obtained')
+    }
+  }
+
+  async verifyToken(token) {
+    const decoded = jwt.decode(token)
+    console.log('decoded jwt', decoded)
+    if (!decoded) throw new Error('Authentification Error')
+    const keyid = decoded.kid
+    const time = Date.now()
+    if (!this.keys[keyid] || this.keys[keyid].fetched + 60 * 1000 * 10 < time) {
+      await this.fetchKey(keyid)
+    }
+    // console.log("keys",keyid, this.type, this.keys[keyid]);
+    if (!this.keys[keyid]) {
+      console.log('unknown key abort', keyid, this.type, time)
+      throw new Error('Authentification Error, unknown keyid ' + keyid)
+    }
+    try {
+      const dectoken = await new Promise((resolve, reject) => {
+        jwt.verify(
+          token,
+          this.keys[keyid].publicKey /* TODO */,
+          { algorithms: ['ES512'] },
+          (err, decoded) => {
+            if (err) {
+              reject(new Error('Authentification Error'))
+            } else {
+              console.log('authorize worked!')
+              resolve(decoded)
+            }
+          }
+        )
+      })
+      return dectoken
+    } catch (error) {
+      throw new Error(error)
+    }
   }
 
   getRealmObj(id, type) {
@@ -456,6 +511,14 @@ export class AVSrouter {
 
   async handleSession(session) {
     let running = true
+    if (this.sessionCount + 1 >= parseInt(process.env.AVSMAXCLIENTS, 10)) {
+      try {
+        session.close({ reason: 'authorization timeout', closeCode: 500 })
+      } catch (error) {
+        console.log('Error emergency session close', error)
+      }
+      return
+    }
     this.sessionCount++
     try {
       await session.ready
@@ -470,6 +533,66 @@ export class AVSrouter {
       console.log('server session was closed', reason)
     })
     // const authorized = false // we are not yet authorized
+    // get a bidi stream for authorizations, a Datagram will not be reliable
+    const realmsReadable = []
+    const realmsWritable = []
+    try {
+      let authstream = await session.createBidirectionalStream()
+      const areader = await authstream.readable.getReader()
+      authstream.writable.close(0)
+      // now we read all available data till the end for the token
+      const timeout = setTimeout(() => {
+        console.log('authorization timeout')
+        session.close({ reason: 'authorization timeout', closeCode: 500 })
+      }, 10 * 1000) // one second max
+      const readarr = []
+      let asize = 0
+      let csize = -1
+      while (csize === -1 || asize < csize) {
+        const readres = await areader.read()
+        console.log('readres', asize, readres)
+
+        if (readres.value) {
+          if (csize === -1) {
+            csize = new DataView(readres.value.buffer).getInt32(0, true)
+            console.log('csize', csize)
+          }
+          asize += readres.value.byteLength
+          if (asize > 100000) throw new Error('authtoken too large') // prevent denial of service attack before auth
+          readarr.push(readres.value)
+        }
+        if (readres.done) break
+      }
+      areader.cancel()
+      authstream = null
+      clearTimeout(timeout)
+      const cctoken = new Uint8Array(asize)
+      readarr.reduce((previousValue, currentValue) => {
+        cctoken.set(currentValue, previousValue)
+        return previousValue + currentValue.byteLength
+      }, 0)
+      const jwttoken = BSONdeserialize(cctoken)
+      console.log('peak jwttoken', jwttoken)
+      const authtoken = await this.verifyToken(jwttoken.token)
+      console.log('peak authtoken', authtoken)
+      if (authtoken.realmsReadable)
+        realmsReadable.push(
+          ...authtoken.realmsReadable.map((el) => new RegExp(el))
+        )
+      if (authtoken.realmsWritable)
+        realmsWritable.push(
+          ...authtoken.realmsReadable.map((el) => new RegExp(el))
+        )
+    } catch (error) {
+      console.log('authorization stream failed', error)
+      try {
+        await new Promise((resolve) => setInterval(resolve, 1000)) // slow down potential attackers
+        session.close({ reason: 'authorization failed', closeCode: 500 })
+      } catch (error) {
+        console.log('auth failed session close failed', error)
+      }
+      return
+    }
 
     // process the type incoming stream
     const processIncomingStream = async (args) => {
