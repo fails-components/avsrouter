@@ -5,6 +5,7 @@ import {
 } from 'bson'
 import jwt from 'jsonwebtoken'
 import axios from 'axios'
+import { webcrypto as crypto } from 'crypto'
 
 class ParseHelper {
   constructor() {
@@ -166,7 +167,7 @@ export class AVSrouter {
     this.setupDispatcher()
   }
 
-  setupDispatcher() {
+  async setupDispatcher() {
     if (!process.env.AVSCONFIG) throw new Error('no avsconfig')
     const config = process.env.AVSCONFIG.split('|')
     if (config.length < 3) throw new Error('wrong avsconfig')
@@ -198,6 +199,24 @@ export class AVSrouter {
       config.headers = { authorization: 'Bearer ' + token }
       return config
     }
+    try {
+      this.keypair = await crypto.subtle.generateKey(
+        {
+          name: 'RSA-OAEP',
+          modulusLength: 4096,
+          publicExponent: new Uint8Array([1, 0, 1]),
+          hash: 'SHA-256'
+        },
+        true,
+        ['encrypt', 'decrypt']
+      )
+      this.keypublic = await crypto.subtle.exportKey(
+        'jwk',
+        this.keypair.publicKey
+      )
+    } catch (error) {
+      console.log('problem generating privkey pair', error)
+    }
     // we need to report the dispatcher on a regular interval
     let updateid
     const updateDispatch = async () => {
@@ -227,6 +246,7 @@ export class AVSrouter {
             maxClients: parseInt(process.env.AVSMAXCLIENTS, 10),
             numRealms,
             maxRealms: parseInt(process.env.AVSMAXREALMS, 10),
+            key: JSON.stringify(this.keypublic), // check if stringify is necessary
             clients,
             primaryRealms: this.primaryRealms // these are the realms where this router is primary for this region
             // all routing for this realm and region should go through this router
@@ -262,7 +282,7 @@ export class AVSrouter {
 
   async verifyToken(token) {
     const decoded = jwt.decode(token)
-    console.log('decoded jwt', decoded)
+    // console.log('decoded jwt', decoded)
     if (!decoded) throw new Error('Authentification Error')
     const keyid = decoded.kid
     const time = Date.now()
@@ -481,11 +501,11 @@ export class AVSrouter {
     const realm = this.realms[id]
     if (
       realm.audio.listeners.size === 0 &&
-      !realm.audio.sources.size === 0 &&
+      realm.audio.sources.size === 0 &&
       realm.video.listeners.size === 0 &&
-      !realm.video.sources.size === 0 &&
+      realm.video.sources.size === 0 &&
       realm.screen.listeners.size === 0 &&
-      !realm.screen.sources.size === 0
+      realm.screen.sources.size === 0
     )
       delete this.realms[id]
   }
@@ -555,7 +575,7 @@ export class AVSrouter {
         if (readres.value) {
           if (csize === -1) {
             csize = new DataView(readres.value.buffer).getInt32(0, true)
-            console.log('csize', csize)
+            // console.log('csize', csize)
           }
           asize += readres.value.byteLength
           if (asize > 100000) throw new Error('authtoken too large') // prevent denial of service attack before auth
@@ -572,16 +592,14 @@ export class AVSrouter {
         return previousValue + currentValue.byteLength
       }, 0)
       const jwttoken = BSONdeserialize(cctoken)
-      console.log('peak jwttoken', jwttoken)
+      // console.log('peak jwttoken', jwttoken)
       const authtoken = await this.verifyToken(jwttoken.token)
-      console.log('peak authtoken', authtoken)
-      if (authtoken.realmsReadable)
-        realmsReadable.push(
-          ...authtoken.realmsReadable.map((el) => new RegExp(el))
-        )
-      if (authtoken.realmsWritable)
+      // console.log('peak authtoken', authtoken)
+      if (authtoken.accessRead)
+        realmsReadable.push(...authtoken.accessRead.map((el) => new RegExp(el)))
+      if (authtoken.accessWrite)
         realmsWritable.push(
-          ...authtoken.realmsReadable.map((el) => new RegExp(el))
+          ...authtoken.accessWrite.map((el) => new RegExp(el))
         )
     } catch (error) {
       console.log('authorization stream failed', error)
@@ -592,6 +610,78 @@ export class AVSrouter {
         console.log('auth failed session close failed', error)
       }
       return
+    }
+
+    // ticket decode
+    const ticketDecode = async ({ tickets, dir }) => {
+      try {
+        const routetics = tickets.map((el) => ({
+          aeskey: el.aeskey ? el.aeskey.buffer : undefined,
+          payload: el.payload ? el.payload.buffer : undefined,
+          iv: el.iv ? el.iv.buffer : undefined
+        }))
+        const myticket = routetics.shift()
+        const { aeskey, payload, iv } = myticket
+        // first we need to decode the aeskey
+        const aeskeydec = await crypto.subtle.importKey(
+          'raw',
+          await crypto.subtle.decrypt(
+            {
+              name: 'RSA-OAEP'
+            },
+            this.keypair.privateKey,
+            aeskey
+          ),
+          {
+            name: 'AES-GCM',
+            length: 256
+          },
+          false,
+          ['decrypt']
+        )
+        // after getting the key we can decrypt, the actual data
+        const {
+          client,
+          realm,
+          next = undefined
+        } = BSONdeserialize(
+          await crypto.subtle.decrypt(
+            {
+              name: 'AES-GCM',
+              iv
+            },
+            aeskeydec,
+            payload
+          )
+        )
+
+        // now we check, if it is actually allowed
+        // console.log('realms peak', realmsReadable, realmsWritable)
+        if (dir === 'outgoing') {
+          // perspective of the router
+          if (!realmsReadable.some((el) => el.test(client))) {
+            throw new Error('outgoing stream ' + client + ' not permitted')
+          }
+          if (!next && routetics.length > 0)
+            throw new Error(
+              'incoming stream ' + client + ' tickets without next'
+            )
+          if (next && routetics.length === 0)
+            throw new Error(
+              'incoming stream ' + client + ' next without tickets'
+            )
+        } else if (dir === 'incoming') {
+          // perspective of the router
+          if (!realmsWritable.some((el) => el.test(client))) {
+            throw new Error('incoming stream ' + client + ' not permitted')
+          }
+        }
+
+        return { next, tickets: routetics, client, realm } // todo add fetch logic
+      } catch (error) {
+        console.log('problem decoding routing ticket', error)
+        return undefined
+      }
     }
 
     // process the type incoming stream
@@ -844,21 +934,30 @@ export class AVSrouter {
                   nextqual = newqual
                   qualchangeStor = [] // reset any already ongoing change
                 }
-              } else if (message.task === 'chgId' && curid !== message.id) {
-                console.log('incoming change', curid, message.id)
+              } else if (message.task === 'chgId') {
+                const dectics = await ticketDecode({
+                  tickets: message.tickets,
+                  dir: 'incoming'
+                })
+                if (dectics) {
+                  const messid = dectics.client
+                  console.log('incoming change', curid, messid)
 
-                if (message.id) {
-                  console.log('change to', message.id)
-                  // TODO check AUTHENTIFICATION
-                  newid = message.id
-                  const checkqual = fixQuality(curqual)
-                  if (checkqual !== curqual) nextqual = checkqual
+                  if (curid !== messid) {
+                    if (messid) {
+                      console.log('change to', messid)
+                      // TODO check AUTHENTIFICATION, done in the ticket
+                      newid = messid
+                      const checkqual = fixQuality(curqual)
+                      if (checkqual !== curqual) nextqual = checkqual
 
-                  this.registerStream(newid, type, writeChunk)
-                } else {
-                  newid = 'sleep'
+                      this.registerStream(newid, type, writeChunk)
+                    } else {
+                      newid = 'sleep'
+                    }
+                    qualchangeStor = [] // reset any already ongoing change
+                  }
                 }
-                qualchangeStor = [] // reset any already ongoing change
               }
             }
             const readres = await streamreader.read()
@@ -887,6 +986,7 @@ export class AVSrouter {
         console.log('error cleanup processIncomingStream', error)
       }
     }
+
     // our stream processor
     const processStream = async (stream) => {
       try {
@@ -902,19 +1002,29 @@ export class AVSrouter {
             if (
               message.command === 'configure' &&
               (message.dir === 'incoming' || message.dir === 'outgoing') &&
-              message.id &&
+              message.tickets &&
               (message.dir === 'outgoing' || message.quality) &&
               (message.type === 'video' ||
                 message.type === 'audio' ||
                 message.type === 'screen')
             ) {
+              const dectics = await ticketDecode({
+                tickets: message.tickets,
+                dir: message.dir
+              })
+              if (!dectics) {
+                streamReader.releaseLock()
+                stream.readable.cancel()
+                break
+              }
+
               // later may be routing code
               if (message.dir === 'incoming') {
                 processIncomingStream({
                   stream,
                   streamReader,
                   parseHelper,
-                  id: message.id,
+                  id: dectics.client,
                   type: message.type,
                   quality: message.quality
                 })
@@ -924,7 +1034,7 @@ export class AVSrouter {
                   stream,
                   streamReader,
                   parseHelper,
-                  id: message.id,
+                  id: dectics.client,
                   type: message.type
                 })
                 break
