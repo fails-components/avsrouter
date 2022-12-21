@@ -4,10 +4,9 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/node_modules/nan",
-                "${workspaceFolder}/third_party/quiche/quiche",
-                "${workspaceFolder}/platform",
-                "${workspaceFolder}/third_party/quiche"
+                "${workspaceFolder}/node_modules/@fails-components/webtransport/third_party/quiche/quiche",
+                "${workspaceFolder}/node_modules/@fails-components/webtransport/platform",
+                "${workspaceFolder}/node_modules/@fails-components/webtransport/third_party/quiche"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang-9",

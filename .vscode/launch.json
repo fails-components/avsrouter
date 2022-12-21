@@ -1,13 +1,43 @@
 {
     "version": "0.2.0",
-    "configurations": [{
+    "configurations": [
+    {
+      "type": "lldb",
+      "name": "Attach to running node",
+      "request": "attach",
+      "program": "/usr/local/bin/node",
+      "pid": "${input:pidValue}"
+      },
+      {
        "type": "lldb",
        "request": "launch",
        "name": "Launch Program",
-       "preLaunchTask": "npm: build-debug",
+//       "preLaunchTask": "npm: build-debug",
        "program": "/usr/local/bin/node",
        "args": [
-          "/workspaces/webtransport/test/test.js"
+          "run",
+          "server2"
        ]
-    }]
+    },
+    {
+      "type": "lldb",
+      "request": "custom",
+      "name": "Open a core dump",
+      "initCommands": [
+          "target create -c ${input:coreFileName}"
+      ]
+  }
+   ],
+   "inputs": [
+      {
+        "id": "coreFileName",
+        "type": "promptString",
+        "description": "Enter core file path"
+      },
+      {
+         "id": "pidValue",
+         "type": "promptString",
+         "description": "Enter pid"
+       }
+    ] 
   }

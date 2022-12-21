@@ -4,6 +4,9 @@ import { generateWebTransportCertificate } from './certificate.js'
 import { existsSync, readFileSync, writeFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
 import { createServer as createServerHttp1 } from 'http'
+import { pid } from 'node:process'
+
+console.log(`This process is pid ${pid}`)
 
 let certificate = null
 
@@ -46,12 +49,15 @@ console.log(
 )
 console.log('start http/3 Server')
 
+let port = 8081
+if (process.env.AVSROUTERPORT) port = parseInt(process.env.AVSROUTERPORT, 10)
+
 let http3serverv4
 let http3serverv6
 try {
   const secret = 'mysecretveryvery' // TODO replace with random stuff
   http3serverv4 = new Http3Server({
-    port: 8081,
+    port,
     host: '0.0.0.0',
     secret,
     cert: certificate.cert, // unclear if it is the correct format
@@ -59,7 +65,7 @@ try {
     spki: certificate.fingerprint
   })
   /* http3serverv6 = new Http3Server({
-    port: 8081,
+    port,
     host: '::',
     secret, 
     cert: certificate.cert, // unclear if it is the correct format
@@ -82,7 +88,7 @@ try {
   const server = createServerHttp1()
   const wtsserver = new WebTransportSocketServer({
     server,
-    port: 8081
+    port
   })
 
   router.runServerLoop(wtsserver)
