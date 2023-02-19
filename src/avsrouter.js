@@ -1451,7 +1451,10 @@ export class AVSrouter {
             while (parseHelper.hasMessageOrPaket()) {
               // only messages for controlling
               const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
-              if (message.task === 'incQual') {
+              if (message.task === 'close') {
+                running = false
+                return
+              } else if (message.task === 'incQual') {
                 const newqual = increaseQual(curqual)
                 console.log('incqual', newqual, nextqual)
                 if (newqual !== curqual) {
