@@ -538,16 +538,20 @@ export class AVSrouter {
 
   removePaketCommiter(id, type, source, isRouter) {
     const realm = this.getRealmObj(id, type)
+    let hassource = false
     if (realm.localSources.has(source)) {
       realm.localSources.delete(source)
       if (isRouter) throw new Error('Router client commiter in localSources')
-      this.cleanUpRealm(id)
-    } else throw new Error('Problem removePaketCommiter')
+      hassource = true
+    }
     if (realm.remoteSources.has(source)) {
       realm.remoteSources.delete(source)
-      if (isRouter) throw new Error('Local client commiter in remoteSources')
-      this.cleanUpRealm(id)
-    } else throw new Error('Problem removePaketCommiter')
+      if (!isRouter) throw new Error('Local client commiter in remoteSources')
+      hassource = true
+    }
+    if (hassource) this.cleanUpRealm(id)
+    else
+      throw new Error('Problem removePaketCommiter no remote or local Source')
   }
 
   async acquireStreams({ id, type, next, nextspki, tickets }) {
