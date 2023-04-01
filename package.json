@@ -48,7 +48,7 @@
   "homepage": "https://github.com/fails-components/avsrouter#readme",
   "dependencies": {
     "@fails-components/webtransport": "^0.1.5",
-    "@fails-components/webtransport-ponyfill-websocket": "^0.0.6",
+    "@fails-components/webtransport-ponyfill-websocket": "^0.0.8",
     "axios": "^0.27.2",
     "bson": "^4.6.3",
     "jsonwebtoken": "^9.0.0",
