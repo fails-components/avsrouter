@@ -1313,6 +1313,11 @@ export class AVSrouter {
       let increaseQual = this.getIncreaseQual(curid, type)
       let decreaseQual = this.getDecreaseQual(curid, type)
 
+      let lastsendpakettime
+      let lastsendpaketnow
+      let pakettime
+      let dropmessage
+
       let qualchangeStor = []
 
       let outgoingbuffer = 0
@@ -1404,6 +1409,7 @@ export class AVSrouter {
                 }) // no await
               }
               qualchangeStor = []
+              lastsendpakettime = 0n
             } else {
               if (newid !== 'sleep') qualchangeStor.push(chunk)
             }
@@ -1413,7 +1419,40 @@ export class AVSrouter {
           if (quality !== curqual || pid !== curid) return // not the subscribed quality or id
           // do not hold more than 1 MB in buffers
           if (!inpaket && outgoingbuffer > 1000000) {
-            console.log('outgoing buffer DROP', outgoingbuffer)
+            if (!dropmessage) {
+              console.log(
+                'outgoing buffer DROP size',
+                type,
+                outgoingbuffer,
+                chunk?.paket?.byteLength
+              )
+              dropmessage = true
+              waitpaketstart = 1
+            }
+            return
+          }
+          // skip if we are too much behind
+          if (chunk.timestamp) pakettime = chunk.timestamp
+          if (
+            !inpaket &&
+            lastsendpakettime &&
+            pakettime &&
+            chunk.paketstart &&
+            chunk.paket &&
+            pakettime - lastsendpakettime - 100_000n > now - lastsendpaketnow &&
+            pakettime - lastsendpakettime < 3000_000n
+          ) {
+            //  microseconds
+            if (!dropmessage) {
+              console.log(
+                'outgoing buffer DROP, time delay',
+                pakettime,
+                lastsendpakettime,
+                pakettime - lastsendpakettime
+              )
+              dropmessage = true
+              waitpaketstart = 1
+            }
             return
           }
           try {
@@ -1424,6 +1463,7 @@ export class AVSrouter {
                   waitpaketstart = 0 // we need to start with complete pakets and a keyframe!
                 else return
               }
+              dropmessage = false
               inpaket = true
               if (chunk.paketend) inpaket = false
               if (chunk.paketremain) paketremain = chunk.paketremain
@@ -1432,8 +1472,12 @@ export class AVSrouter {
               outgoingbuffer += chunk.paket.byteLength
               // if (args.fixedQuality) console.log('FIX QUAL WRITE 1', quality)
               await streamwriter.write(chunk.paket)
-              // if (args.fixedQuality) console.log('FIX QUAL WRITE 1a', quality)
               outgoingbuffer -= chunk.paket.byteLength
+              if (chunk.timestamp) {
+                lastsendpakettime = chunk.timestamp
+                lastsendpaketnow = now
+              }
+              // if (args.fixedQuality) console.log('FIX QUAL WRITE 1a', quality)
             } else if (chunk.message) {
               // message are always passed, no delay there
               // if (args.fixedQuality) console.log('FIX QUAL WRITE 2')
