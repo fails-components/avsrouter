@@ -1439,16 +1439,19 @@ export class AVSrouter {
             pakettime &&
             chunk.paketstart &&
             chunk.paket &&
-            pakettime - lastsendpakettime - 100_000n > now - lastsendpaketnow &&
+            pakettime - lastsendpakettime - 100_000n >
+              (now - lastsendpaketnow) * 1000 &&
             pakettime - lastsendpakettime < 3000_000n
           ) {
             //  microseconds
             if (!dropmessage) {
               console.log(
                 'outgoing buffer DROP, time delay',
+                type,
                 pakettime,
                 lastsendpakettime,
-                pakettime - lastsendpakettime
+                pakettime - lastsendpakettime,
+                (now - lastsendpaketnow) * 1000
               )
               dropmessage = true
               waitpaketstart = 1
