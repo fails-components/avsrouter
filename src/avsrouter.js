@@ -139,9 +139,14 @@ class ParseHelper {
               paketpos += hdrlen + bsonlen
             } else {
               let keyframe = false
+              let temporalLayerId = 0
               if (hdrlen >= 17) {
                 const hdrflags = wdv.getUint8(paketpos + 16)
                 keyframe = !!(hdrflags & 1)
+                if (hdrflags & (1 << 1) && hdrlen >= 22) {
+                  // for temporallayer id
+                  temporalLayerId = wdv.getUint32(paketpos + 18)
+                }
               }
               let timestamp
               if (hdrlen >= 16) {
@@ -161,6 +166,7 @@ class ParseHelper {
                 ),
                 paketremain: payloadlen + hdrlen - towrite,
                 keyframe,
+                temporalLayerId,
                 timestamp,
                 incomtime: Date.now()
               })
@@ -1354,7 +1360,6 @@ export class AVSrouter {
       let increaseQual = this.getIncreaseQual(curid, type)
       let decreaseQual = this.getDecreaseQual(curid, type)
 
-      let pakettime
       let dropmessage
 
       // eslint-disable-next-line no-unused-vars
@@ -1507,8 +1512,9 @@ export class AVSrouter {
         }
         const writing = async () => {
           let dropcurrentpaketwrite = false
-          let dropuntilkeyframe = false
+          let dropuntilkeyframe = 10 // support max 10 layers, should be save
           let curdroptime = 100
+          let temporalLayerId = 0
           // eslint-disable-next-line no-unmodified-loop-condition
           while (running && streamrunning()) {
             try {
@@ -1516,13 +1522,15 @@ export class AVSrouter {
               const now = Date.now()
 
               if (chunk.paket) {
+                if (chunk.temporalLayerId)
+                  temporalLayerId = chunk.temporalLayerId
                 if (
-                  dropuntilkeyframe &&
+                  dropuntilkeyframe !== 10 &&
                   !dropcurrentpaketwrite &&
                   chunk.paketstart &&
                   chunk.keyframe
                 ) {
-                  dropuntilkeyframe = false
+                  dropuntilkeyframe = 10 // includes all ten layers
                 }
                 // ok now we determine, if we should drop the paket since it is sitting here for a while
                 // we should use hysteresis, once we drop we drop completely
@@ -1531,19 +1539,37 @@ export class AVSrouter {
                     console.log(
                       'outgoing writer DROP, time delay',
                       type,
-                      pakettime,
+                      temporalLayerId,
                       now - chunk.incomtime,
                       curdroptime
                     )
                     dropcurrentpaketwrite = true
-                    curdroptime = 20
-                    if (chunk.keyframe) dropuntilkeyframe = true // if we have a keyframe and drop, we must drop until the next one
+                    curdroptime = Math.max(20, curdroptime - 20)
+                    if (
+                      chunk.temporalLayerId &&
+                      dropuntilkeyframe > chunk.temporalLayerId
+                    )
+                      dropuntilkeyframe = chunk.temporalLayerId
+                    if (chunk.keyframe) dropuntilkeyframe = 0 // if we have a keyframe and drop, we must drop until the next one
                   } else {
                     curdroptime = 100 // reset
                   }
                 }
-
-                if (!dropcurrentpaketwrite && !dropuntilkeyframe) {
+                /*
+                console.log(
+                  'dtreamwriter',
+                  type,
+                  !dropcurrentpaketwrite,
+                  dropuntilkeyframe > temporalLayerId,
+                  dropuntilkeyframe,
+                  chunk.temporalLayerId,
+                  temporalLayerId
+                )
+                */
+                if (
+                  !dropcurrentpaketwrite &&
+                  dropuntilkeyframe > temporalLayerId
+                ) {
                   await streamwriterOut.write(chunk.paket)
                 }
                 paketsinwait--
