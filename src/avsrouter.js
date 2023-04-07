@@ -8,6 +8,46 @@ import axios from 'axios'
 import { webcrypto as crypto } from 'crypto'
 import { WebTransport } from '@fails-components/webtransport'
 
+class AsyncPaketPipe {
+  constructor() {
+    this.pakets = []
+    this.waitpromres = []
+    this.waitpromrej = []
+    this.paketnum = 0
+  }
+
+  addPaket(paket) {
+    paket.num = this.paketnum
+    this.paketnum++
+    const plength = this.pakets.length
+    if (plength === 0 && this.waitpromres.length > 0) {
+      this.waitpromrej.shift()
+      const res = this.waitpromres.shift()
+      res(paket)
+    } else {
+      this.pakets.push(paket)
+    }
+  }
+
+  getPaket() {
+    if (this.pakets.length > 0) {
+      return Promise.resolve(this.pakets.shift())
+    } else {
+      return new Promise((resolve, reject) => {
+        this.waitpromres.push(resolve)
+        this.waitpromrej.push(reject)
+      })
+    }
+  }
+
+  flush() {
+    const rejects = this.waitpromrej
+    this.waitpromres = []
+    this.waitpromrej = []
+    rejects.forEach((res) => res())
+  }
+}
+
 class ParseHelper {
   constructor() {
     this.outpaketpos = 0
@@ -121,7 +161,8 @@ class ParseHelper {
                 ),
                 paketremain: payloadlen + hdrlen - towrite,
                 keyframe,
-                timestamp
+                timestamp,
+                incomtime: Date.now()
               })
               if (towrite < payloadlen + hdrlen) {
                 this.outpaketpos = towrite
@@ -1307,30 +1348,32 @@ export class AVSrouter {
       let curqual = -1
       let nextqual // tells us that we should change on the next keyframe
       let lastpaket = 0
-      let streamwriter
+      let streamwriterOut
       let writeChunk
       let fixQuality = this.getFixQuality(curid, type)
       let increaseQual = this.getIncreaseQual(curid, type)
       let decreaseQual = this.getDecreaseQual(curid, type)
 
-      let lastsendpakettime
-      let lastsendpaketnow
       let pakettime
       let dropmessage
 
+      // eslint-disable-next-line no-unused-vars
+      let paketsinwait = 0
       let qualchangeStor = []
 
       let outgoingbuffer = 0
 
+      const outgoingpipe = new AsyncPaketPipe()
+
       if (args.fixedQuality) nextqual = args.fixedQuality
 
       try {
-        streamwriter = await stream.writable.getWriter()
+        streamwriterOut = await stream.writable.getWriter()
         const sIMsend = async (paket) => {
           try {
-            if (streamwriter) await streamwriter.write(paket.message)
+            outgoingpipe.addPaket(paket)
           } catch (error) {
-            console.log('error in sendInitialMessages 1', streamwriter)
+            console.log('error in sendInitialMessages 1', error)
           }
         }
         let sendInitialMessages = this.getSendInitialMessages(
@@ -1360,7 +1403,7 @@ export class AVSrouter {
                 const fakearray = new Uint8Array(new ArrayBuffer(paketremain))
                 for (let i = 0; i < paketremain - 1; i++) fakearray[i] = 0
                 fakearray[paketremain - 1] = 1
-                streamwriter.write(fakearray)
+                outgoingpipe.addPaket(fakearray)
                 inpaket = false
                 paketremain = 0
               }
@@ -1402,14 +1445,11 @@ export class AVSrouter {
               }) // no await! // init the decoder // no await
               for (const el of qualchangeStor) {
                 inpaket = true
-                if (chunk.paketend) inpaket = false
+                if (el.paketend) inpaket = false
                 // if (args.fixedQuality) console.log('FIX QUAL WRITE 3')
-                streamwriter.write(el.paket).catch((err) => {
-                  console.log('Streamwriter failed', err)
-                }) // no await
+                outgoingpipe.addPaket(el)
               }
               qualchangeStor = []
-              lastsendpakettime = 0n
             } else {
               if (newid !== 'sleep') qualchangeStor.push(chunk)
             }
@@ -1431,33 +1471,6 @@ export class AVSrouter {
             }
             return
           }
-          // skip if we are too much behind
-          if (chunk.timestamp) pakettime = chunk.timestamp
-          if (
-            !inpaket &&
-            lastsendpakettime &&
-            pakettime &&
-            chunk.paketstart &&
-            chunk.paket &&
-            pakettime - lastsendpakettime - 100_000n >
-              (now - lastsendpaketnow) * 1000 &&
-            pakettime - lastsendpakettime < 3000_000n
-          ) {
-            //  microseconds
-            if (!dropmessage) {
-              console.log(
-                'outgoing buffer DROP, time delay',
-                type,
-                pakettime,
-                lastsendpakettime,
-                pakettime - lastsendpakettime,
-                (now - lastsendpaketnow) * 1000
-              )
-              dropmessage = true
-              waitpaketstart = 1
-            }
-            return
-          }
           try {
             if (chunk.paket) {
               lastpaket = now
@@ -1471,28 +1484,85 @@ export class AVSrouter {
               if (chunk.paketend) inpaket = false
               if (chunk.paketremain) paketremain = chunk.paketremain
               else paketremain = 0
-
               outgoingbuffer += chunk.paket.byteLength
               // if (args.fixedQuality) console.log('FIX QUAL WRITE 1', quality)
-              await streamwriter.write(chunk.paket)
-              outgoingbuffer -= chunk.paket.byteLength
-              if (chunk.timestamp) {
-                lastsendpakettime = chunk.timestamp
-                lastsendpaketnow = now
-              }
+              // console.log('Pakets in wait', type, paketsinwait, outgoingbuffer)
+              paketsinwait++
+              outgoingpipe.addPaket(chunk)
+
               // if (args.fixedQuality) console.log('FIX QUAL WRITE 1a', quality)
             } else if (chunk.message) {
               // message are always passed, no delay there
               // if (args.fixedQuality) console.log('FIX QUAL WRITE 2')
-              await streamwriter.write(chunk.message)
+              outgoingpipe.addPaket(chunk)
             }
           } catch (error) {
             if (writefailedres) {
-              console.log('DEBUG writefailed')
+              console.log('DEBUG writefailed', error)
               writefailedres('writefailed')
               writefailedres = undefined
             }
             running = false
+          }
+        }
+        const writing = async () => {
+          let dropcurrentpaketwrite = false
+          let dropuntilkeyframe = false
+          let curdroptime = 100
+          // eslint-disable-next-line no-unmodified-loop-condition
+          while (running && streamrunning()) {
+            try {
+              const chunk = await outgoingpipe.getPaket()
+              const now = Date.now()
+
+              if (chunk.paket) {
+                if (
+                  dropuntilkeyframe &&
+                  !dropcurrentpaketwrite &&
+                  chunk.paketstart &&
+                  chunk.keyframe
+                ) {
+                  dropuntilkeyframe = false
+                }
+                // ok now we determine, if we should drop the paket since it is sitting here for a while
+                // we should use hysteresis, once we drop we drop completely
+                if (chunk.paketstart && chunk.incomtime) {
+                  if (now - chunk.incomtime > curdroptime) {
+                    console.log(
+                      'outgoing writer DROP, time delay',
+                      type,
+                      pakettime,
+                      now - chunk.incomtime,
+                      curdroptime
+                    )
+                    dropcurrentpaketwrite = true
+                    curdroptime = 20
+                    if (chunk.keyframe) dropuntilkeyframe = true // if we have a keyframe and drop, we must drop until the next one
+                  } else {
+                    curdroptime = 100 // reset
+                  }
+                }
+
+                if (!dropcurrentpaketwrite && !dropuntilkeyframe) {
+                  await streamwriterOut.write(chunk.paket)
+                }
+                paketsinwait--
+                outgoingbuffer -= chunk.paket.byteLength
+
+                if (chunk.paketend) {
+                  dropcurrentpaketwrite = false
+                }
+              } else if (chunk.message) {
+                await streamwriterOut.write(chunk.message)
+              }
+            } catch (error) {
+              if (writefailedres) {
+                console.log('DEBUG writefailed writing', error)
+                writefailedres('writefailed')
+                writefailedres = undefined
+              }
+              running = false
+            }
           }
         }
         this.registerStream(curid, type, writeChunk)
@@ -1582,10 +1652,11 @@ export class AVSrouter {
             if (readres.done) break
           }
         }
-        await Promise.race([await reading(), writefailed])
+        await Promise.race([reading(), writefailed, writing()])
       } catch (error) {
         console.log('error processOutgoingStream', error)
       }
+      outgoingpipe.flush()
       try {
         console.log('UNREGISTER STREAM SECTION REACHED')
         if (curid !== 'sleep') this.unregisterStream(curid, type, writeChunk)
@@ -1594,8 +1665,8 @@ export class AVSrouter {
 
         streamreader.releaseLock()
         streamreader = undefined
-        streamwriter.releaseLock()
-        streamwriter = undefined
+        streamwriterOut.releaseLock()
+        streamwriterOut = undefined
         /* await stream.readable.cancel()
         console.log('mark prob 10')
         await stream.writable.close()
