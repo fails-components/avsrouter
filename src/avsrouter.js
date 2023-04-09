@@ -31,6 +31,7 @@ class AsyncPaketPipe {
 
   getPaket() {
     if (this.pakets.length > 0) {
+      this.paketnum--
       return Promise.resolve(this.pakets.shift())
     } else {
       return new Promise((resolve, reject) => {
@@ -38,6 +39,10 @@ class AsyncPaketPipe {
         this.waitpromrej.push(reject)
       })
     }
+  }
+
+  numPackets() {
+    return this.paketnum
   }
 
   flush() {
@@ -51,6 +56,7 @@ class AsyncPaketPipe {
 class ParseHelper {
   constructor() {
     this.outpaketpos = 0
+    this.outpaket = undefined
     this.outputqueue = []
     this.savedpaket = null
   }
@@ -156,23 +162,35 @@ class ParseHelper {
                 payloadlen + hdrlen,
                 workpaket.byteLength - paketpos
               )
-              this.outputqueue.push({
+              const outpaketbuf = new Uint8Array(payloadlen + hdrlen)
+              this.outpaket = {
                 paketstart: true,
-                paketend: false,
-                paket: new Uint8Array(
+                paketend: true,
+                /* paket: new Uint8Array(
                   workpaket.buffer,
                   workpaket.byteOffset + paketpos,
                   towrite
-                ),
-                paketremain: payloadlen + hdrlen - towrite,
+                ), */
+                paket: outpaketbuf,
+                paketremain: 0, // payloadlen + hdrlen - towrite,
                 keyframe,
                 temporalLayerId,
                 timestamp,
                 incomtime: Date.now()
-              })
+              }
+              // copy data, zero copy is not an advantage, since the overhead for distributing to too big
+              const byteoff = workpaket.byteOffset + paketpos
+              for (let run = 0; run < towrite; run++) {
+                outpaketbuf[run] = workpaket[byteoff + run]
+              }
               if (towrite < payloadlen + hdrlen) {
                 this.outpaketpos = towrite
                 this.outpaketlen = payloadlen + hdrlen
+              } else {
+                this.outputqueue.push(this.outpaket)
+                delete this.outpaket
+                this.outpaketpos = 0
+                this.outpaketlen = 0
               }
               paketpos += towrite
             }
@@ -183,6 +201,14 @@ class ParseHelper {
           this.outpaketlen - this.outpaketpos,
           workpaket.byteLength - paketpos
         )
+        const outpaketbuf = this.outpaket.paket
+        const byteoff = workpaket.byteOffset + paketpos
+        const byteoffdest = this.outpaketpos
+
+        for (let run = 0; run < towrite; run++) {
+          outpaketbuf[byteoffdest + run] = workpaket[byteoff + run]
+        }
+        /*
         this.outputqueue.push({
           paketstart: false,
           paketend: this.outpaketlen === this.outpaketpos + towrite,
@@ -192,12 +218,14 @@ class ParseHelper {
             workpaket.byteOffset + paketpos,
             towrite
           )
-        })
+        }) */
         if (towrite < this.outpaketlen - this.outpaketpos) {
           this.outpaketpos += towrite
         } else {
           this.outpaketpos = 0
           this.outpaketlen = 0
+          this.outputqueue.push(this.outpaket)
+          delete this.outpaket
         }
         paketpos += towrite
       }
@@ -1234,10 +1262,14 @@ export class AVSrouter {
 
       let streamerror
 
+      // let statId = 1 // for debuging
+
       const writeStat = async (chunk) => {
         try {
           if (chunk.message) {
             // message are always passed, no delay there
+            // console.log('writeStat', chunk.message.byteLength, statId)
+            // statId++
             await streamwriter.write(chunk.message)
           }
         } catch (error) {
@@ -1249,11 +1281,25 @@ export class AVSrouter {
         }
       }
 
+      let statArray = []
+      let insideSend = false
+
       const sendStatBson = async (chunk) => {
-        try {
-          await this.sendBson(chunk, writeStat)
-        } catch (error) {
-          throw new Error('sendBson err:', error)
+        statArray.push(chunk)
+        if (statArray.length > 10) {
+          if (!insideSend) {
+            const sendArray = statArray
+            statArray = []
+            try {
+              insideSend = true
+              await this.sendBson(sendArray, writeStat)
+            } catch (error) {
+              throw new Error('sendBson err:', error)
+            }
+            insideSend = false
+          } else {
+            statArray.shift() // drop if blocked, no sense to pile up stat data
+          }
         }
       }
 
@@ -1275,10 +1321,10 @@ export class AVSrouter {
             streamerror = 'problem stat'
           })
         } else if (paket.paketend) {
+          // currently obsolete
           curpaketsize += paket.paket.byteLength
           sendStatBson({
             task: 'end',
-            time: Date.now(),
             size: curpaketsize
           }).catch((error) => {
             console.log('problem stat:', error)
@@ -1513,7 +1559,7 @@ export class AVSrouter {
         const writing = async () => {
           let dropcurrentpaketwrite = false
           let dropuntilkeyframe = 10 // support max 10 layers, should be save
-          let curdroptime = 100
+          let curdroptime = type === 'audio' ? 100 : 40 // video should be dropped faster
           let temporalLayerId = 0
           // eslint-disable-next-line no-unmodified-loop-condition
           while (running && streamrunning()) {
@@ -1522,14 +1568,22 @@ export class AVSrouter {
               const now = Date.now()
 
               if (chunk.paket) {
-                if (chunk.temporalLayerId)
+                if (chunk.temporalLayerId !== undefined)
                   temporalLayerId = chunk.temporalLayerId
+                else {
+                  console.log(
+                    'PANIC PANIC PANIC no TEMPORAL LAYER',
+                    type,
+                    chunk.temporalLayerId
+                  )
+                }
                 if (
                   dropuntilkeyframe !== 10 &&
                   !dropcurrentpaketwrite &&
                   chunk.paketstart &&
                   chunk.keyframe
                 ) {
+                  console.log('keyframe', type, chunk.temporalLayerId)
                   dropuntilkeyframe = 10 // includes all ten layers
                 }
                 // ok now we determine, if we should drop the paket since it is sitting here for a while
@@ -1541,10 +1595,11 @@ export class AVSrouter {
                       type,
                       temporalLayerId,
                       now - chunk.incomtime,
-                      curdroptime
+                      curdroptime,
+                      router
                     )
                     dropcurrentpaketwrite = true
-                    curdroptime = Math.max(20, curdroptime - 20)
+                    curdroptime = Math.max(20, curdroptime - 30)
                     if (
                       chunk.temporalLayerId &&
                       dropuntilkeyframe > chunk.temporalLayerId
@@ -1552,7 +1607,7 @@ export class AVSrouter {
                       dropuntilkeyframe = chunk.temporalLayerId
                     if (chunk.keyframe) dropuntilkeyframe = 0 // if we have a keyframe and drop, we must drop until the next one
                   } else {
-                    curdroptime = 100 // reset
+                    curdroptime = type === 'audio' ? 100 : 40 // reset
                   }
                 }
                 /*
@@ -1571,6 +1626,15 @@ export class AVSrouter {
                   dropuntilkeyframe > temporalLayerId
                 ) {
                   await streamwriterOut.write(chunk.paket)
+                  /* console.log(
+                    'waittime',
+                    type,
+                    now - chunk.incomtime,
+                    Date.now() - now,
+                    chunk?.paket?.length,
+                    router,
+                    chunk.temporalLayerId
+                  ) */
                 }
                 paketsinwait--
                 outgoingbuffer -= chunk.paket.byteLength
@@ -1579,6 +1643,7 @@ export class AVSrouter {
                   dropcurrentpaketwrite = false
                 }
               } else if (chunk.message) {
+                // console.log('messagesend', chunk.message.byteLength)
                 await streamwriterOut.write(chunk.message)
               }
             } catch (error) {
