@@ -1345,7 +1345,7 @@ export class AVSrouter {
           while (parseHelper.hasMessageOrPaket()) {
             const chunk = parseHelper.getMessageOrPaket()
             if (chunk.paket) {
-              paketstat(chunk)
+              if (!args.isRouter) paketstat(chunk)
               // maybe also test if arraybuffer
               // if (args.isRouter) console.log('FIX QUAL READ')
               paketcommitter(chunk)
