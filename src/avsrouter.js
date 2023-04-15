@@ -1187,7 +1187,8 @@ export class AVSrouter {
           client,
           realm,
           next = undefined,
-          nextspki = undefined
+          nextspki = undefined,
+          tempOut = undefined
         } = BSONdeserialize(
           await crypto.subtle.decrypt(
             {
@@ -1219,8 +1220,22 @@ export class AVSrouter {
               'incoming stream ' + client + ' next without tickets'
             )
         } else if (dir === 'incoming') {
+          let tempPerm = false
+          if (tempOut) {
+            // okay we have a tempOut, let's check if it is valid
+            const tempauthtoken = await this.verifyToken(tempOut)
+            const temprealmsWritable = tempauthtoken.accessWrite.map(
+              (el) => new RegExp(el)
+            )
+            if (temprealmsWritable.some((el) => el.test(client))) {
+              tempPerm = true
+            }
+          }
           // perspective of the router
-          if (!realmsWritable.some((el) => el.test(client)) && !router) {
+          if (
+            !(realmsWritable.some((el) => el.test(client)) || tempPerm) &&
+            !router
+          ) {
             console.log('router mode', router)
             throw new Error(
               'incoming stream ' + client + ' not permitted or no router'
