@@ -1702,7 +1702,7 @@ export class AVSrouter {
                 if (message.tickets) {
                   dectics = await ticketDecode({
                     tickets: message.tickets,
-                    dir: 'incoming'
+                    dir: 'outgoing' // routers perspective
                   })
                   if (dectics) {
                     messid = dectics.client
