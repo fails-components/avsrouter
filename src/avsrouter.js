@@ -787,7 +787,7 @@ export class AVSrouter {
               const payload = BSONserialize({ token: response.data.token })
               await awrt.write(payload)
               await awrt.close()
-              value.readable.cancel(0)
+              await value.readable.cancel(0)
             }
           } catch (error) {
             console.log('error passing auth token reader', error)
@@ -1236,7 +1236,7 @@ export class AVSrouter {
             !(realmsWritable.some((el) => el.test(client)) || tempPerm) &&
             !router
           ) {
-            console.log('router mode', router)
+            console.log('router mode', router, tempPerm, realmsWritable, client)
             throw new Error(
               'incoming stream ' + client + ' not permitted or no router'
             )
@@ -1988,7 +1988,7 @@ export class AVSrouter {
                   )
                   streamReader.releaseLock()
                   pspos = 12
-                  stream.readable.cancel()
+                  await stream.readable.cancel(403)
                   pspos = 13
                   break
                 }
@@ -2045,7 +2045,7 @@ export class AVSrouter {
                 pspos = 20
                 console.log('first message ignore close', message)
                 streamReader.releaseLock()
-                stream.readable.cancel()
+                await stream.readable.cancel(403)
                 break
               } else console.log('NOP')
             } else {
@@ -2068,7 +2068,7 @@ export class AVSrouter {
                 pspos = 23
                 if (!dectics) {
                   streamReader.releaseLock()
-                  stream.readable.cancel()
+                  await stream.readable.cancel(403)
                   break
                 }
                 pspos = 24
@@ -2113,7 +2113,7 @@ export class AVSrouter {
                 pspos = 29
                 if (!dectics) {
                   streamReader.releaseLock()
-                  stream.readable.cancel()
+                  await stream.readable.cancel(403)
                   break
                 }
                 console.log('STOP STREAM FETCH 2')
@@ -2127,7 +2127,7 @@ export class AVSrouter {
               } else {
                 console.log('unknown command close', message)
                 streamReader.releaseLock()
-                stream.readable.cancel()
+                await stream.readable.cancel(400)
                 break
               }
               console.log('CLIENT IS ROUTER problem', message)
@@ -2272,7 +2272,7 @@ export class AVSrouter {
         }
         try {
           // bidistrCtrl.writable.close(501)
-          bidistrCtrl.readable.cancel(501)
+          await bidistrCtrl.readable.cancel(501)
         } catch (error) {
           console.log('DEBUG BUG bidistrCtrl', bidistrCtrl)
           console.log('problem closing stream', error)
