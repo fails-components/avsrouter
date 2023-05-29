@@ -79,13 +79,6 @@ class ParseHelper {
       const reschunk = new ArrayBuffer(
         this.savedpaket.byteLength + paket.byteLength
       )
-      /*
-      const srca = new Uint8Array(
-        this.savedpaket.buffer,
-        this.savedpaket.byteOffset,
-        this.savedpaket.byteLength - this.readpos
-      )
-      */
       workpaket = new Uint8Array(reschunk)
       for (let i = 0; i < this.savedpaket.length; i++) {
         workpaket[i] = this.savedpaket[i]
@@ -166,11 +159,6 @@ class ParseHelper {
               this.outpaket = {
                 paketstart: true,
                 paketend: true,
-                /* paket: new Uint8Array(
-                  workpaket.buffer,
-                  workpaket.byteOffset + paketpos,
-                  towrite
-                ), */
                 paket: outpaketbuf,
                 paketremain: 0, // payloadlen + hdrlen - towrite,
                 keyframe,
@@ -208,17 +196,6 @@ class ParseHelper {
         for (let run = 0; run < towrite; run++) {
           outpaketbuf[byteoffdest + run] = workpaket[byteoff + run]
         }
-        /*
-        this.outputqueue.push({
-          paketstart: false,
-          paketend: this.outpaketlen === this.outpaketpos + towrite,
-          paketremain: this.outpaketlen - this.outpaketpos - towrite,
-          paket: new Uint8Array(
-            workpaket.buffer,
-            workpaket.byteOffset + paketpos,
-            towrite
-          )
-        }) */
         if (towrite < this.outpaketlen - this.outpaketpos) {
           this.outpaketpos += towrite
         } else {
@@ -305,9 +282,7 @@ export class AVSrouter {
         // but before clean up all realms
         Object.keys(this.realms).forEach((el) => this.cleanUpRealm(el))
         // ok first we have to gather all information
-        console.log('debug router realms', this.realms)
-        for (const client in this.realms)
-          console.log('clients', this.realms[client].video.listeners)
+        // console.log('debug router realms', this.realms)
         const allclients = Object.keys(this.realms)
         const realmInfo = allclients.map((el) => {
           const addr = el.split(':')
@@ -334,14 +309,13 @@ export class AVSrouter {
           )
         })
         // now we count
-        console.log('realmInfo', realmInfo)
         const numRealms = new Set(realmInfo.map((el) => el.realm)).size
 
         const primRealms = Object.entries(this.primaryRealms)
           .filter((el) => el[1] > 0)
           .map((el) => el[0])
 
-        console.log('debug router info', {
+        /* console.log('debug router info', {
           url: process.env.AVSROUTERURL,
           wsurl: process.env.AVSROUTERWSURL,
           spki: this.spki,
@@ -356,7 +330,7 @@ export class AVSrouter {
           remoteClients,
           primaryRealms: primRealms // these are the realms where this router is primary for this region
           // all routing for this realm and region should go through this router
-        })
+        })*/
 
         await axios.put(
           '/router',
@@ -409,16 +383,13 @@ export class AVSrouter {
   }
 
   async verifyToken(token) {
-    // console.log('peek verify token', token)
     const decoded = jwt.decode(token)
-    // console.log('decoded jwt', decoded)
     if (!decoded) throw new Error('Authentification Error')
     const keyid = decoded.kid
     const time = Date.now()
     if (!this.keys[keyid] || this.keys[keyid].fetched + 60 * 1000 * 10 < time) {
       await this.fetchKey(keyid)
     }
-    // console.log("keys",keyid, this.type, this.keys[keyid]);
     if (!this.keys[keyid]) {
       console.log('unknown key abort', keyid, this.type, time)
       throw new Error('Authentification Error, unknown keyid ' + keyid)
@@ -433,7 +404,6 @@ export class AVSrouter {
             if (err) {
               reject(new Error('Authentification Error'))
             } else {
-              console.log('authorize worked!')
               resolve(decoded)
             }
           }
@@ -564,7 +534,6 @@ export class AVSrouter {
   }
 
   getPaketCommiter(id, type, quality, isRouter) {
-    console.log('DEBUG getPaketCommiter', id, type, quality, isRouter)
     const realm = this.getRealmObj(id, type)
     const commi = (paket) => {
       const listeners = realm.listeners
@@ -631,21 +600,17 @@ export class AVSrouter {
 
   async acquireStreams({ id, type, next, nextspki, tickets }) {
     const realm = this.getRealmObj(id, type)
-    console.log('acquireStreams before check', id, realm)
     if (realm.localSources.size > 0 || realm.remoteSources.size > 0) return
     if (realm.rsession.size > 0) return
-    console.log('acquireStreams after check')
     // we do not have a local source or a remote session attached, we have to attach a new session
     let removed = false
     const myrsession = {
       remove: () => {
-        console.log('RSESSION EMPTY REMOVE CALLED')
         removed = true
       }
     }
     realm.rsession.add(myrsession)
     try {
-      console.log('AQS 1')
       const serv = await this.getRemoteServer({
         next,
         nextspki,
@@ -657,29 +622,22 @@ export class AVSrouter {
         tickets
       })
       if (!serv) throw new Error('Did not get remote server')
-      console.log('AQS 2')
       if (removed) {
         serv.unRegister(id, type, tickets)
       }
-      console.log('AQS 3')
       myrsession.remove = () => {
-        console.log('RSESSION REMOVE CALLED')
         console.trace()
         serv.unRegister(id, type, tickets)
         realm.rsession.delete(myrsession)
       }
-      console.log('AQS 4')
     } catch (error) {
       throw new Error('Acquire Streams prob:' + error)
     }
   }
 
   async getRemoteServer({ next, nextspki, remove, id, type, tickets }) {
-    console.log('getRemoteServer', this.rservers, next)
     if (this.rservers[next]) {
-      console.log('gRS 1')
       const serv = this.rservers[next]
-      console.log('gRS 2')
       serv.register(id, type, tickets, remove)
       return serv
     } else {
@@ -694,7 +652,6 @@ export class AVSrouter {
             rserv.requestRes.push(resolve)
           })
         )
-        console.log('gRS 10')
         const addReq = (req) => {
           rserv.requests.push(
             new Promise((resolve) => {
@@ -705,12 +662,8 @@ export class AVSrouter {
           const res = rserv.requestRes.shift()
           res(req)
         }
-        console.log('gRS 11')
         rserv.register = (id, type, tickets, remove) => {
           const realmkey = id + ':' + type
-          console.log('REGISTER, all realms', realmkey)
-          console.log('REGISTER, all realms2', this.realms)
-          console.log('REGISTER, rserv realms', rserv.realms)
           if (!rserv.realms.has(realmkey)) {
             const forRemoval = new Set()
             forRemoval.add(remove)
@@ -720,10 +673,7 @@ export class AVSrouter {
               forRemoval,
               count: 1
             })
-            console.log('REGISTER, all realms after set', realmkey)
-            console.log('REGISTER, rserv realms after set', rserv.realms)
             // TODO establish session
-            console.log('REGISTER CALLED ON remote', id, type, remove)
             addReq({ id, type, tickets, get: true })
           } else {
             const theRealm = rserv.realms.get(realmkey)
@@ -731,53 +681,40 @@ export class AVSrouter {
             theRealm.add(remove)
           }
         }
-        console.log('gRS 12')
         rserv.unRegister = (id, type, tickets) => {
-          console.log('UNREGISTER CALLED ON remote', id, type)
           const realmkey = id + ':' + type
           const obj = rserv.realms.get(realmkey)
           // do we have to close something
           if (obj) {
             obj.count--
             if (obj.count === 0) {
-              console.log('DELETE REQUEST')
               obj.remove()
               addReq({ type, tickets, stop: true })
               rserv.realms.delete(realmkey)
             }
           }
           if (rserv.realms.size === 0) {
-            console.log('CLOSE REQUEST')
             // TODO request for closing the connection
             addReq({ type, close: true })
             delete this.rservers[next]
           }
         }
-        console.log('gRS 13')
-
-        console.log('gRS 3a', next)
-        console.log('gRS 3b', nextspki)
         const value = Buffer.from(
           nextspki.split(':').map((el) => parseInt(el, 16))
         )
         const session = new WebTransport(next, {
           serverCertificateHashes: [{ algorithm: 'sha-256', value }]
         })
-        console.log('gRS 4')
         try {
-          console.log('gRS 5')
           // get token
           const response = await axios.get('/token', {
             ...this.axiosConfig(),
             params: { url: process.env.AVSROUTERURL }
           })
-          console.log('gRS 6')
           if (!response.data || !response.data.token)
             throw new Error('no token retrieved')
           // end get token
-          console.log('gRS 7')
           await session.ready
-          console.log('gRS 7b')
           const rs = session.incomingBidirectionalStreams
           const rsreader = rs.getReader()
           try {
@@ -792,12 +729,10 @@ export class AVSrouter {
           } catch (error) {
             console.log('error passing auth token reader', error)
           }
-          console.log('gRS 8')
           rsreader.releaseLock()
         } catch (error) {
           console.log('error passing auth token', error)
         }
-        console.log('gRS 9')
         // rserv.session = session
 
         this.handleSession(session, rserv.requests)
@@ -817,7 +752,6 @@ export class AVSrouter {
   }
 
   unregisterStream(id, type, listener) {
-    console.log('DEBUG unregister Stream', id, type, listener)
     console.trace()
     const realm = this.getRealmObj(id, type)
     if (realm.listeners.has(listener)) {
@@ -833,32 +767,27 @@ export class AVSrouter {
   }
 
   registerStream(id, type, listener) {
-    console.log('DEBUG register Stream', id, type, listener)
     const realm = this.getRealmObj(id, type)
     realm.listeners.add(listener)
   }
 
   unregisterClient(id, remote, router) {
-    console.log('DEBUG unregister Client', id, remote)
     const realm = this.getRealmColl(id)
     if (remote) realm.numRclients--
     else if (router) realm.numRouter--
     else realm.numClients--
     this.cleanUpRealm(id)
     if (realm.numClients < 0 || realm.numRclients < 0 || realm.numRoute < 0) {
-      console.log('realm debug neg', id, remote, router, realm)
       console.trace()
       throw new Error('negative Client number')
     }
     if (remote && router) {
-      console.log('realm debug remote router', id, remote, router)
       console.trace()
       throw new Error('router and rclient')
     }
   }
 
   registerClient(id, remote, router) {
-    console.log('DEBUG register Client', id, remote)
     const realm = this.getRealmColl(id)
     if (remote) realm.numRclients++
     else if (router) realm.numRouter++
@@ -888,9 +817,8 @@ export class AVSrouter {
   }
 
   cleanUpRealm(id) {
-    console.log('CLEANUPREALM', id)
     const realm = this.realms[id]
-    console.log(
+    /* console.log(
       'CLEANUPREALM',
       realm.audio.listeners.size,
       realm.audio.localSources.size,
@@ -913,15 +841,8 @@ export class AVSrouter {
       realm.numClients === 0,
       realm.numRclients === 0,
       realm.numRouter === 0
-    )
+    ) */
     if (realm.numClients === 0 && realm.numRclients === 0) {
-      console.log(
-        'DELETE CALL REMOVE RESESSION',
-        realm.screen.rsession.size,
-        realm.video.rsession.size,
-        realm.audio.rsession.size,
-        id
-      )
       realm.screen.rsession.forEach((el) => el.remove())
       realm.video.rsession.forEach((el) => el.remove())
       realm.audio.rsession.forEach((el) => el.remove()) // remove all remote sources from realm
@@ -939,7 +860,6 @@ export class AVSrouter {
       realm.numClients === 0 &&
       realm.numRclients === 0
     ) {
-      console.log('realm with id delete', id)
       delete this.realms[id]
     }
   }
@@ -952,7 +872,7 @@ export class AVSrouter {
       while (true) {
         const { done, value } = await sessionReader.read()
         if (done) {
-          console.log('Server is exited')
+          console.log('Server exited')
           break
         }
         console.log('new session on avsrouter ')
@@ -981,29 +901,23 @@ export class AVSrouter {
     if (router) taskTickets = {}
 
     const cleanUpStuff = () => {
-      console.log('CLEANUP 1')
       cleanupEntered = 1
       if (counted) {
         if (!router && !clientIsRouter) this.sessionCount--
         else if (clientIsRouter) this.sessionCountRouterClients--
         else this.sessionCountRouters--
       }
-      console.log('CLEANUP 2')
       cleanupEntered = 2
       clientsRegistered.forEach((rclient) => {
-        console.log('cleanup unregister', rclient)
         this.unregisterClient(rclient, clientIsRouter, router)
       })
-      console.log('CLEANUP 3')
       cleanupEntered = 3
       clientsRegistered.clear()
       // cleanup Fetchers
       cleanupEntered = 4
-      console.log('CLEANUP FETCHERS', fetchersWrite)
       for (const id in fetchersWrite) {
         for (const type in fetchersWrite[id]) {
           cleanupEntered = 5
-          console.log('cleanupfetcher', id, type)
           this.unregisterStream(id, type, fetchersWrite[id][type])
           delete fetchersWrite[id][type]
           delete fetchers[id][type]
@@ -1025,7 +939,7 @@ export class AVSrouter {
       await session.ready
     } catch (error) {
       cleanUpStuff()
-      console.log('error session ready')
+      console.log('error session ready', error)
       return
     }
     console.log('session is ready')
@@ -1062,12 +976,10 @@ export class AVSrouter {
         let csize = -1
         while (csize === -1 || asize < csize) {
           const readres = await areader.read()
-          console.log('readres', asize, readres)
 
           if (readres.value) {
             if (csize === -1) {
               csize = new DataView(readres.value.buffer).getInt32(0, true)
-              // console.log('csize', csize)
             }
             asize += readres.value.byteLength
             if (asize > 100000) throw new Error('authtoken too large') // prevent denial of service attack before auth
@@ -1094,9 +1006,7 @@ export class AVSrouter {
           return previousValue + currentValue.byteLength
         }, 0)
         const jwttoken = BSONdeserialize(cctoken)
-        // console.log('peak jwttoken', jwttoken)
         const authtoken = await this.verifyToken(jwttoken.token)
-        // console.log('peak authtoken', authtoken)
         if (authtoken.accessRead)
           realmsReadable.push(
             ...authtoken.accessRead.map((el) => new RegExp(el))
@@ -1201,12 +1111,9 @@ export class AVSrouter {
         )
 
         // now we check, if it is actually allowed
-        // console.log('realms peak', realmsReadable, realmsWritable)
         if (dir === 'outgoing') {
           // perspective of the router
           if (!realmsReadable.some((el) => el.test(client)) && !router) {
-            console.log('router mode', router)
-            console.log('realms readable', realmsReadable)
             throw new Error(
               'outgoing stream ' + client + ' not permitted or no router'
             )
@@ -1236,7 +1143,6 @@ export class AVSrouter {
             !(realmsWritable.some((el) => el.test(client)) || tempPerm) &&
             !router
           ) {
-            console.log('router mode', router, tempPerm, realmsWritable, client)
             throw new Error(
               'incoming stream ' + client + ' not permitted or no router'
             )
@@ -1277,14 +1183,10 @@ export class AVSrouter {
 
       let streamerror
 
-      // let statId = 1 // for debuging
-
       const writeStat = async (chunk) => {
         try {
           if (chunk.message) {
             // message are always passed, no delay there
-            // console.log('writeStat', chunk.message.byteLength, statId)
-            // statId++
             await streamwriter.write(chunk.message)
           }
         } catch (error) {
@@ -1526,12 +1428,6 @@ export class AVSrouter {
           // do not hold more than 1 MB in buffers
           if (!inpaket && outgoingbuffer > 1000000) {
             if (!dropmessage) {
-              console.log(
-                'outgoing buffer DROP size',
-                type,
-                outgoingbuffer,
-                chunk?.paket?.byteLength
-              )
               dropmessage = true
               waitpaketstart = 1
             }
@@ -1564,7 +1460,7 @@ export class AVSrouter {
             }
           } catch (error) {
             if (writefailedres) {
-              console.log('DEBUG writefailed', error)
+              console.log('writefailed', error)
               writefailedres('writefailed')
               writefailedres = undefined
             }
@@ -1598,7 +1494,6 @@ export class AVSrouter {
                   chunk.paketstart &&
                   chunk.keyframe
                 ) {
-                  console.log('keyframe', type, chunk.temporalLayerId)
                   dropuntilkeyframe = 10 // includes all ten layers
                 }
                 // ok now we determine, if we should drop the paket since it is sitting here for a while
@@ -1625,31 +1520,11 @@ export class AVSrouter {
                     curdroptime = type === 'audio' ? 100 : 40 // reset
                   }
                 }
-                /*
-                console.log(
-                  'dtreamwriter',
-                  type,
-                  !dropcurrentpaketwrite,
-                  dropuntilkeyframe > temporalLayerId,
-                  dropuntilkeyframe,
-                  chunk.temporalLayerId,
-                  temporalLayerId
-                )
-                */
                 if (
                   !dropcurrentpaketwrite &&
                   dropuntilkeyframe > temporalLayerId
                 ) {
                   await streamwriterOut.write(chunk.paket)
-                  /* console.log(
-                    'waittime',
-                    type,
-                    now - chunk.incomtime,
-                    Date.now() - now,
-                    chunk?.paket?.length,
-                    router,
-                    chunk.temporalLayerId
-                  ) */
                 }
                 paketsinwait--
                 outgoingbuffer -= chunk.paket.byteLength
@@ -1663,7 +1538,7 @@ export class AVSrouter {
               }
             } catch (error) {
               if (writefailedres) {
-                console.log('DEBUG writefailed writing', error)
+                console.log('writefailed writing', error)
                 writefailedres('writefailed')
                 writefailedres = undefined
               }
@@ -1696,7 +1571,6 @@ export class AVSrouter {
                   qualchangeStor = [] // reset any already ongoing change
                 }
               } else if (message.task === 'chgId') {
-                console.log('debug ChgID ticket', message)
                 let messid
                 let dectics
                 if (message.tickets) {
@@ -1729,7 +1603,6 @@ export class AVSrouter {
                       }
                     }
                     if (dectics && dectics.next) {
-                      console.log('before acquireStreams')
                       await this.acquireStreams({
                         next: dectics.next,
                         nextspki: dectics.nextspki,
@@ -1737,7 +1610,6 @@ export class AVSrouter {
                         id: messid,
                         type
                       })
-                      console.log('after acquireStreams')
                     }
                     newid = messid
                     const checkqual = fixQuality(curqual)
@@ -1764,7 +1636,6 @@ export class AVSrouter {
       }
       outgoingpipe.flush()
       try {
-        console.log('UNREGISTER STREAM SECTION REACHED')
         if (curid !== 'sleep') this.unregisterStream(curid, type, writeChunk)
         if (newid && newid !== 'sleep')
           this.unregisterStream(newid, type, writeChunk)
@@ -1785,7 +1656,6 @@ export class AVSrouter {
     // our stream fetcher
     const processStreamFetcher = ({ id, type, tickets, nonce }) => {
       // ok we install listeners to automatically fetch all qualities
-      console.log('PROCESSTREAMFETCHER', tickets, id, type)
 
       const streams = {} // indexed by quality
       if (!fetchers[id]) fetchers[id] = {}
@@ -1802,7 +1672,6 @@ export class AVSrouter {
       const writeTest = async (chunk, pid, quality) => {
         if (!streams[quality]) {
           try {
-            console.log('writeTest inspect session', session)
             streams[quality] = session.createBidirectionalStream() // means we have no stream
             streams[quality] = await streams[quality]
             const stream = streams[quality]
@@ -1815,14 +1684,6 @@ export class AVSrouter {
                 throw new Error('stream fetch writer failed:', error)
               }
             }
-
-            console.log('WRITETEST BSON DEBUG', {
-              command: 'configure',
-              dir: 'incoming', // routers perspective
-              quality,
-              type,
-              nonce
-            })
 
             await this.sendBson(
               {
@@ -1845,12 +1706,6 @@ export class AVSrouter {
               running: () => !!streams[quality]
             })
               .finally(() => {
-                console.log('PROCESSSTREAMFETCHER finally', streams)
-                console.log(
-                  'PROCESSSTREAMFETCHER diag',
-                  streams[quality] === stream,
-                  streams[quality]
-                )
                 if (streams[quality] === stream) delete streams[quality]
                 console.log('PROCESSSTREAMFETCHER finally after', streams)
               })
@@ -1864,40 +1719,22 @@ export class AVSrouter {
           }
         }
       }
-      console.log('PROCESSTREAMFETCHER mark2')
 
       this.registerStream(id, type, writeTest)
-      console.log('PROCESSTREAMFETCHER mark3', id)
       if (!fetchersWrite[id]) fetchersWrite[id] = {}
-      console.log('PROCESSTREAMFETCHER mark4', fetchersWrite[id])
       if (fetchersWrite[id][type]) {
         console.log('double fetcher write', id, type, fetchers[id][type])
         console.log('fetcher state', fetchers)
         throw new Error('Should not happen double fetcher write')
       }
-      console.log('PROCESSTREAMFETCHER mark5', fetchersWrite[id])
       fetchersWrite[id][type] = writeTest
-      console.log(
-        'PROCESSTREAMFETCHER mark6',
-        fetchersWrite[id],
-        fetchers[id][type]
-      )
     }
 
     const processRemoveStreamFetcher = ({ id, type }) => {
-      console.log(
-        'PROCESS REMOVE STREAM FETCHER',
-        id,
-        type,
-        fetchers[id],
-        fetchersWrite[id]
-      )
       if (fetchers[id] && fetchers[id][type]) {
-        console.log('PROCESS REMOVE STREAM FETCHER MARK 1')
         const closestreams = async () => {
           try {
             const allstreams = fetchers[id][type]
-            console.log('PROCESS REMOVE DBG', fetchers[id][type])
             delete fetchers[id][type]
             if (Object.keys(fetchers[id]).length === 0) delete fetchers[id]
             for (const quality in allstreams) {
@@ -1919,7 +1756,6 @@ export class AVSrouter {
         delete fetchersWrite[id][type]
         if (Object.keys(fetchersWrite[id]).length === 0)
           delete fetchersWrite[id]
-        console.log('PROCESS REMOVE STREAM FETCHER MARK 2')
         try {
           this.unregisterStream(id, type, writeTest)
         } catch (error) {
@@ -1952,7 +1788,6 @@ export class AVSrouter {
             pspos = 7
             if (!clientIsRouter) {
               pspos = 8
-              if (router) console.log('INCOMING ROUTER MESSAGE', message)
               if (
                 message.command === 'configure' &&
                 (message.dir === 'incoming' || message.dir === 'outgoing') &&
@@ -1972,32 +1807,22 @@ export class AVSrouter {
                     dir: message.dir
                   })
                 } else {
-                  console.log('NONCE DEBUG pre', message.nonce, taskTickets)
                   dectics = taskTickets[message.nonce]
                   // delete taskTickets[message.nonce] // my bad, nonce is actually used multiple times for every quality, type
                 }
                 pspos = 10
-                if (router) console.log('ROUTER DEBUG MARK 1')
                 pspos = 11
                 if (!dectics) {
-                  console.log(
-                    'NONCE DEBUG',
-                    !!router,
-                    message.nonce,
-                    taskTickets
-                  )
                   streamReader.releaseLock()
                   pspos = 12
                   await stream.readable.cancel(403)
                   pspos = 13
                   break
                 }
-                if (router) console.log('ROUTER DEBUG MARK 2')
 
                 // later may be routing code
                 if (message.dir === 'incoming') {
                   pspos = 14
-                  if (router) console.log('incoming from ROUTER')
                   await processIncomingStream({
                     stream,
                     streamReader,
@@ -2026,11 +1851,6 @@ export class AVSrouter {
                     })
                   }
                   pspos = 18
-                  if (router)
-                    console.log(
-                      'outgoing from ROUTER should not happen',
-                      streamReader
-                    )
                   pspos = 19
                   await processOutgoingStream({
                     stream,
@@ -2043,7 +1863,6 @@ export class AVSrouter {
                 }
               } else if (message.command !== 'nop') {
                 pspos = 20
-                console.log('first message ignore close', message)
                 streamReader.releaseLock()
                 await stream.readable.cancel(403)
                 break
@@ -2051,8 +1870,6 @@ export class AVSrouter {
             } else {
               pspos = 21
               // case clientIsRouter
-              console.log('client is router', message)
-              console.log('CLIENT IS ROUTER')
               if (
                 message.command === 'fetchStreams' &&
                 /* message.id && */
@@ -2088,7 +1905,6 @@ export class AVSrouter {
                 }
                 pspos = 26
                 // now we install a stream fetcher
-                console.log('STREAMFETCHER', message, dectics)
                 pspos = 27
                 processStreamFetcher({
                   id: dectics.client,
@@ -2104,25 +1920,21 @@ export class AVSrouter {
                   message.type === 'screen')
               ) {
                 pspos = 28
-                console.log('STOP STREAM FETCH')
                 const dectics = await ticketDecode({
                   tickets: message.tickets,
                   dir: 'outgoing'
                 })
-                console.log('STOP STREAM FETCH 1')
                 pspos = 29
                 if (!dectics) {
                   streamReader.releaseLock()
                   await stream.readable.cancel(403)
                   break
                 }
-                console.log('STOP STREAM FETCH 2')
                 pspos = 30
                 processRemoveStreamFetcher({
                   id: dectics.client,
                   type: message.type
                 })
-                console.log('STOP STREAM FETCH 3')
                 pspos = 31
               } else {
                 console.log('unknown command close', message)
@@ -2130,18 +1942,10 @@ export class AVSrouter {
                 await stream.readable.cancel(400)
                 break
               }
-              console.log('CLIENT IS ROUTER problem', message)
             }
           } else {
             pspos = 32
             garbage++
-            console.log(
-              'has no message or package',
-              garbage,
-              clientIsRouter,
-              router,
-              paket
-            )
             if (garbage > 10) {
               console.log('reject stream with GARBAGE')
               stream.close(400)
@@ -2185,11 +1989,8 @@ export class AVSrouter {
     }
     const requestProcess = async () => {
       try {
-        console.log('RP 1')
         const bidistrCtrl = await session.createBidirectionalStream()
-        console.log('RP 2')
         const bidiWriter = await bidistrCtrl.writable.getWriter()
-        console.log('RP 3')
         const writFunc = async (chunk) => {
           try {
             await bidiWriter.write(chunk.message)
@@ -2198,14 +1999,11 @@ export class AVSrouter {
             throw new Error('Bidiwriter failed:', error)
           }
         }
-        console.log('RP 4')
         // TODO authentification
         while (true) {
           const request = await requester[0]
           requester.shift()
-          console.log('RP 5', request)
           if (request.close) {
-            console.log('RP 6')
             try {
               await session.close({
                 reason: 'close requested',
@@ -2217,15 +2015,11 @@ export class AVSrouter {
             }
             break
           }
-          console.log('RP 7')
           if (request.get) {
-            console.log('RP 8')
             const { tickets, type, id } = request
             const nonce = this.createNonce()
-            console.log('CREATED NONCE', nonce)
 
             taskTickets[nonce] = { client: id } // that is our ticket, already decoded
-            console.log('CREATED NONCE TICKET', taskTickets[nonce], taskTickets)
             // ok we should acquire all, streams connected with id and type..., as long as the request works
             try {
               await this.sendBson(
@@ -2242,11 +2036,8 @@ export class AVSrouter {
               break
             }
           }
-          console.log('RP 9')
           if (request.stop) {
-            console.log('RP 10 STOP')
             const { tickets, type, id /* only for debugging */ } = request
-            console.log('RP 10 STOP FETCH', id)
             // ok we should acquire all, streams connected with id and type..., as long as the request works
             try {
               await this.sendBson(
@@ -2262,7 +2053,6 @@ export class AVSrouter {
               break
             }
           }
-          console.log('RP 11')
           // do stuff
         }
         try {
@@ -2274,7 +2064,6 @@ export class AVSrouter {
           // bidistrCtrl.writable.close(501)
           await bidistrCtrl.readable.cancel(501)
         } catch (error) {
-          console.log('DEBUG BUG bidistrCtrl', bidistrCtrl)
           console.log('problem closing stream', error)
         }
       } catch (error) {
