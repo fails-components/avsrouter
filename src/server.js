@@ -115,11 +115,16 @@ const mainfunc = async () => {
       readyacme = true
       host = new URL(process.env.AVSROUTERURL).hostname
     } else {
-      let key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
-      let cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
-      const options = {
-        key,
-        cert
+      let options
+      try {
+        const key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
+        const cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
+        options = {
+          key,
+          cert
+        }
+      } catch (error) {
+        console.log('Problem reading ssl keys, load them later...', error)
       }
 
       // https1
@@ -130,8 +135,9 @@ const mainfunc = async () => {
         async (cur, prev) => {
           if (cur.mtime !== prev.mtime) {
             try {
-              key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
-              cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
+              console.log('Reload certificates')
+              const key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
+              const cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
               server.setSecureContext({ key, cert })
             } catch (error) {
               console.log('Problem renewing certificates: ', error)
