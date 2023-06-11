@@ -2,6 +2,6 @@
 .env2
 node_modules
 build
-certificatecache.json
+config
 
 

@@ -217,6 +217,7 @@ export class AVSrouter {
     this.keys = []
     this.rservers = {}
     this.spki = args.spki
+    this.port = args.port
     this.sessionCount = 0
     this.sessionCountRouterClients = 0 // does not count towards sessionCount
     this.sessionCountRouters = 0
@@ -330,13 +331,23 @@ export class AVSrouter {
           remoteClients,
           primaryRealms: primRealms // these are the realms where this router is primary for this region
           // all routing for this realm and region should go through this router
-        })*/
+        }) */
 
         await axios.put(
           '/router',
           {
-            url: process.env.AVSROUTERURL,
-            wsurl: process.env.AVSROUTERWSURL,
+            url: process.env.AVSROUTERURL
+              ? process.env.AVSROUTERURL
+              : 'https://' +
+                process.env.AVSHOST +
+                (this.port === 443 ? '' : ':' + this.port) +
+                '/avfails',
+            wsurl: process.env.AVSROUTERWSURL
+              ? process.env.AVSROUTERURL
+              : 'wss://' +
+                process.env.AVSHOST +
+                (this.port === 443 ? '' : ':' + this.port) +
+                '/avfails',
             spki: this.spki,
             numRouters: this.sessionCountRouters,
             numClients: this.sessionCount,
@@ -2037,6 +2048,7 @@ export class AVSrouter {
             }
           }
           if (request.stop) {
+            // eslint-disable-next-line no-unused-vars
             const { tickets, type, id /* only for debugging */ } = request
             // ok we should acquire all, streams connected with id and type..., as long as the request works
             try {
