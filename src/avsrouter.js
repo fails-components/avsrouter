@@ -242,8 +242,7 @@ export class AVSrouter {
 
     if (!process.env.AVSMAXCLIENTS) throw new Error('AVSMAXCLIENTS missing')
     if (!process.env.AVSMAXREALMS) throw new Error('AVSMAXREALMS missing')
-    if (!process.env.AVSROUTERURL) throw new Error('AVSROUTERURL missing')
-    if (!process.env.AVSROUTERWSURL) throw new Error('AVSROUTERWSURL missing')
+    if (!process.env.AVSHOST) throw new Error('AVSROUTERURL missing')
 
     axios.defaults.baseURL = config[2]
     this.axiosConfig = () => {
