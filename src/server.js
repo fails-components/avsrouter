@@ -100,7 +100,7 @@ const mainfunc = async () => {
   try {
     console.log('start http/1 Server')
     let server
-    let host = process.env.AVSROUTERHOS
+    let host = process.env.AVSROUTERHOST
     if (
       process.env.AVSROUTERURL &&
       process.env.AVSROUTERURL.startsWith('ws://')
