@@ -1,7 +1,7 @@
 import { Http3Server } from '@fails-components/webtransport'
 import { WebTransportSocketServer } from '@fails-components/webtransport-ponyfill-websocket'
 import { generateWebTransportCertificate } from './certificate.js'
-import { exists, readFile, writeFile } from 'node:fs/promise'
+import { exists, readFile, writeFile } from 'node:fs/promises'
 import { watchFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
 import { createServer as createServerHttp1 } from 'http'
