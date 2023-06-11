@@ -1,7 +1,7 @@
 import { Http3Server } from '@fails-components/webtransport'
 import { WebTransportSocketServer } from '@fails-components/webtransport-ponyfill-websocket'
 import { generateWebTransportCertificate } from './certificate.js'
-import { exists, readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import { watchFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
 import { createServer as createServerHttp1 } from 'http'
@@ -14,8 +14,8 @@ const mainfunc = async () => {
   console.log(`This process is pid ${pid}`)
 
   let certificate = null
-
-  if (await exists('./config/certificatecache.json')) {
+  try {
+    await access('./config/certificatecache.json')
     try {
       certificate = JSON.parse(
         await readFile('./config/certificatecache.json', {
@@ -29,6 +29,8 @@ const mainfunc = async () => {
     } catch (error) {
       console.log('error reading certifcate', error)
     }
+  } catch (error) {
+    // be silent if file does not exist
   }
 
   if (!certificate) {
