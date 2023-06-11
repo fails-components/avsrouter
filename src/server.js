@@ -59,11 +59,6 @@ const mainfunc = async () => {
   const router = new AVSrouter({ spki: certificate.fingerprint, port })
 
   console.log('certificate hash ', certificate.fingerprint)
-  console.log(
-    'certificate hash buffer',
-    certificate.hash,
-    new Uint8Array(certificate.hash)
-  )
   console.log('start http/3 Server')
   let readyhttp3
 
