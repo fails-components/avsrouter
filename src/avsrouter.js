@@ -338,13 +338,13 @@ export class AVSrouter {
             url: process.env.AVSROUTERURL
               ? process.env.AVSROUTERURL
               : 'https://' +
-                process.env.AVSHOST +
+                process.env.AVSROUTERHOST +
                 (this.port === 443 ? '' : ':' + this.port) +
                 '/avfails',
             wsurl: process.env.AVSROUTERWSURL
               ? process.env.AVSROUTERURL
               : 'wss://' +
-                process.env.AVSHOST +
+                process.env.AVSROUTERHOST +
                 (this.port === 443 ? '' : ':' + this.port) +
                 '/avfails',
             spki: this.spki,
