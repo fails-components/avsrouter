@@ -1,28 +1,26 @@
 # syntax = docker/dockerfile:1.2
-FROM node:16-bullseye
+FROM node:18-bullseye-slim
 
 ARG ENV
 
-RUN apt-get update -y && apt-get upgrade -y && apt-get install -y clang-9 cmake build-essential perl6 golang  ninja-build protobuf-compiler
+WORKDIR /usr/src/avsrouter
 
-
-WORKDIR /usr/src/webtransport
+VOLUME /usr/src/avsrouter/challenges /usr/src/avsrouter/certs 
 
 COPY package*.json ./
 
 COPY . .
 
+RUN if [ "$ENV" = "debug" ] ; then npm install ; else  npm ci --only=production; fi
 
-RUN  npm install --production=false --unsafe-perm
+ENV AVSROUTERHOST = '0.0.0.0'
+ENV AVSROUTERPORT = 443
+
+EXPOSE 80
+EXPOSE 443/udp
+EXPOSE 443
+
+ENV AVSROUTERACMEHTTP1DIR = '/acmehttp'
 
 
-
-#debug
-RUN --mount=type=secret,id=GH_TOKEN export GH_TOKEN=`cat /run/secrets/GH_TOKEN`; if [ "$ENV" = "debug" ] ; then npm install ; else  npm ci --only=production; fi
-
-
-
-EXPOSE 8081/udp
-EXPOSE 8081
-
-#CMD [ "node", "src/server.js" ]
+CMD [ "node", "src/server.js" ]
