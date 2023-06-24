@@ -161,9 +161,9 @@ const mainfunc = async () => {
       app.use(
         '/.well-known/acme-challenge',
         express.static(
-          process.env.AVSROUTERACMEHTTP1DIR
+          (process.env.AVSROUTERACMEHTTP1DIR
             ? process.env.AVSROUTERACMEHTTP1DIR
-            : 'challenges'
+            : 'challenges') + '/.well-known/acme-challenge'
         )
       )
 
