@@ -3,6 +3,8 @@ FROM node:18-bullseye-slim
 
 ARG ENV
 
+RUN apt-get update -y && apt-get install curl -y
+
 WORKDIR /usr/src/avsrouter
 
 VOLUME /usr/src/avsrouter/challenges /usr/src/avsrouter/certs 

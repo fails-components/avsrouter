@@ -237,7 +237,7 @@ export class AVSrouter {
     try {
       this.dispatcher = new URL(config[2])
     } catch (error) {
-      throw new Error('Wrong url' + config[2] + 'for disptacher ' + error)
+      throw new Error('Wrong url ' + config[2] + ' for dispatcher ' + error)
     }
 
     if (!process.env.AVSMAXCLIENTS) throw new Error('AVSMAXCLIENTS missing')
