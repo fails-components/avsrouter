@@ -230,14 +230,14 @@ export class AVSrouter {
     if (config.length < 3) throw new Error('wrong avsconfig')
     this.region = config[0]
     if (typeof this.region !== 'string' || this.region.length < 3)
-      throw new Error('wrong avsconfig')
+      throw new Error('wrong avsconfig region')
     if (typeof config[1] !== 'string' || config[1].length < 8)
       throw new Error('wrong avsconfig hmac')
     const hmac = Buffer.from(config[1], 'base64')
     try {
       this.dispatcher = new URL(config[2])
     } catch (error) {
-      throw new Error('Wrong url for disptacher ' + error)
+      throw new Error('Wrong url' + config[2] + 'for disptacher ' + error)
     }
 
     if (!process.env.AVSMAXCLIENTS) throw new Error('AVSMAXCLIENTS missing')
