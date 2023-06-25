@@ -53,6 +53,7 @@
     "bson": "^4.6.3",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.0",
+    "luxon": "^3.3.0",
     "selfsigned": "^2.0.1",
     "uuid": "^9.0.0",
     "ws": "^8.8.1"

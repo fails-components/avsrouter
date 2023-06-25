@@ -9,6 +9,7 @@ import { createServer as createServerHttps1 } from 'https'
 import { pid } from 'node:process'
 import { v4 as uuidv4 } from 'uuid'
 import express from 'express'
+import { DateTime } from 'luxon'
 
 const mainfunc = async () => {
   console.log(`This process is pid ${pid}`)
@@ -51,6 +52,41 @@ const mainfunc = async () => {
         if (err) console.log('write certificate cache error', err)
       }
     )
+  }
+
+  {
+    const zone = process.env.AVSTIMEZONE || 'Europe/Berlin'
+    // ok, we got a certificate, we need to exit the process at the time when the certificate expires
+    const endtime = DateTime.fromMillis(certificate.validUntil, { zone })
+    // now get a random number from
+    if (endtime < DateTime.local({ zone }).endOf('day')) {
+      // really,  should not happen
+      console.log(
+        'Generated certifcate expires before the end of day, exit immediately!'
+      )
+      process.exit(0)
+    }
+    // now we get the start of the day before termination, add 60 + a random time between 0 and 180 minutes
+    // thus the instances will restart between 1 and 4 in the night/morning
+    const terminationtime = endtime
+      .startOf('day')
+      .plus({ minutes: 60 + Math.random() * 180 })
+    if (terminationtime > endtime) terminationtime.minus({ days: 1 }) // after certificate expiration, so minus 1 day
+    console.log(
+      'Certificate will expire at ',
+      endtime.toLocaleString(DateTime.DATETIME_FULL)
+    )
+    console.log(
+      'Restart scheduled at ',
+      terminationtime.toLocaleString(DateTime.DATETIME_FULL)
+    )
+    setTimeout(() => {
+      console.log(
+        'Restarting (terminating) since certificate, will expire soon at',
+        endtime.toLocaleString(DateTime.DATETIME_FULL)
+      )
+      process.exit(0)
+    }, terminationtime.toMillis())
   }
 
   let port = 8081
