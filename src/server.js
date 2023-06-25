@@ -80,13 +80,15 @@ const mainfunc = async () => {
       'Restart scheduled at ',
       terminationtime.toLocaleString(DateTime.DATETIME_FULL)
     )
-    setTimeout(() => {
-      console.log(
-        'Restarting (terminating) since certificate, will expire soon at',
-        endtime.toLocaleString(DateTime.DATETIME_FULL)
-      )
-      process.exit(0)
-    }, terminationtime.toMillis())
+    setInterval(() => {
+      if (DateTime.now() > terminationtime) {
+        console.log(
+          'Restarting (terminating) since certificate, will expire soon at',
+          endtime.toLocaleString(DateTime.DATETIME_FULL)
+        )
+        process.exit(0)
+      }
+    }, 1 * 60 * 1000)
   }
 
   let port = 8081
