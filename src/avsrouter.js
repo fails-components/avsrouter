@@ -342,7 +342,7 @@ export class AVSrouter {
                 (this.port === 443 ? '' : ':' + this.port) +
                 '/avfails',
             wsurl: process.env.AVSROUTERWSURL
-              ? process.env.AVSROUTERURL
+              ? process.env.AVSROUTERWSURL
               : 'wss://' +
                 process.env.AVSROUTERHOST +
                 (this.port === 443 ? '' : ':' + this.port) +
