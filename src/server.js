@@ -150,8 +150,14 @@ const mainfunc = async () => {
     } else {
       let options
       try {
-        const key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
-        const cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
+        const key = await readFile(process.env.AVSROUTERKEYPEM, {
+          encoding: 'utf8',
+          flag: 'r'
+        })
+        const cert = await readFile(process.env.AVSROUTERCERTPEM, {
+          encoding: 'utf8',
+          flag: 'r'
+        })
         options = {
           key,
           cert
@@ -169,8 +175,14 @@ const mainfunc = async () => {
           if (cur.mtime !== prev.mtime) {
             try {
               console.log('Reload certificates')
-              const key = await readFile(process.env.AVSROUTERKEYPEM, 'utf8')
-              const cert = await readFile(process.env.AVSROUTERCERTPEM, 'utf8')
+              const key = await readFile(process.env.AVSROUTERKEYPEM, {
+                encoding: 'utf8',
+                flag: 'r'
+              })
+              const cert = await readFile(process.env.AVSROUTERCERTPEM, {
+                encoding: 'utf8',
+                flag: 'r'
+              })
               server.setSecureContext({ key, cert })
             } catch (error) {
               console.log('Problem renewing certificates: ', error)
