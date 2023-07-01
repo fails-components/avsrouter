@@ -140,8 +140,8 @@ const mainfunc = async () => {
     let server
     let host = process.env.AVSROUTERHOST
     if (
-      process.env.AVSROUTERURL &&
-      process.env.AVSROUTERURL.startsWith('ws://')
+      process.env.AVSROUTERWSURL &&
+      process.env.AVSROUTERWSURL.startsWith('ws://')
     ) {
       // http1
       server = createServerHttp1()
