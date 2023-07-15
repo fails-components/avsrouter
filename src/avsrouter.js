@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken'
 import axios from 'axios'
 import { webcrypto as crypto } from 'crypto'
 import { WebTransport } from '@fails-components/webtransport'
+import log from 'fancy-log'
 
 class AsyncPaketPipe {
   constructor() {
@@ -269,7 +270,7 @@ export class AVSrouter {
       const keypair = await this.keypair
       this.keypublic = await crypto.subtle.exportKey('jwk', keypair.publicKey)
     } catch (error) {
-      console.log('problem generating privkey pair', error)
+      log('problem generating privkey pair', error)
     }
     // we need to report the dispatcher on a regular interval
     let updateid
@@ -282,7 +283,7 @@ export class AVSrouter {
         // but before clean up all realms
         Object.keys(this.realms).forEach((el) => this.cleanUpRealm(el))
         // ok first we have to gather all information
-        // console.log('debug router realms', this.realms)
+        // log('debug router realms', this.realms)
         const allclients = Object.keys(this.realms)
         const realmInfo = allclients.map((el) => {
           const addr = el.split(':')
@@ -315,7 +316,7 @@ export class AVSrouter {
           .filter((el) => el[1] > 0)
           .map((el) => el[0])
 
-        /* console.log('debug router info', {
+        /* log('debug router info', {
           url: process.env.AVSROUTERURL,
           wsurl: process.env.AVSROUTERWSURL,
           spki: this.spki,
@@ -363,7 +364,7 @@ export class AVSrouter {
           { ...this.axiosConfig() }
         )
       } catch (error) {
-        console.log('problem updating dispatch info: ', error)
+        log('problem updating dispatch info: ', error)
       }
 
       updateid = setTimeout(
@@ -387,7 +388,7 @@ export class AVSrouter {
       this.keys[key].publicKey = response.data.key
       this.keys[key].fetch = Date.now()
     } catch (err) {
-      console.log('Error fetchKey', err)
+      log('Error fetchKey', err)
       throw new Error('no key obtained')
     }
   }
@@ -401,7 +402,7 @@ export class AVSrouter {
       await this.fetchKey(keyid)
     }
     if (!this.keys[keyid]) {
-      console.log('unknown key abort', keyid, this.type, time)
+      log('unknown key abort', keyid, this.type, time)
       throw new Error('Authentification Error, unknown keyid ' + keyid)
     }
     try {
@@ -571,7 +572,7 @@ export class AVSrouter {
       const send2 = sendmeth({ message: bson })
       await Promise.all([send1, send2])
     } catch (error) {
-      console.log('problem send bson', tosend)
+      log('problem send bson', tosend)
       throw new Error('sendBson failed:', error)
     }
   }
@@ -737,11 +738,11 @@ export class AVSrouter {
               await value.readable.cancel(0)
             }
           } catch (error) {
-            console.log('error passing auth token reader', error)
+            log('error passing auth token reader', error)
           }
           rsreader.releaseLock()
         } catch (error) {
-          console.log('error passing auth token', error)
+          log('error passing auth token', error)
         }
         // rserv.session = session
 
@@ -751,7 +752,7 @@ export class AVSrouter {
             delete this.rservers[next]
           })
           .catch((error) => {
-            console.log('Problem in handleSession remote:', error)
+            log('Problem in handleSession remote:', error)
           })
         rserv.register(id, type, tickets, remove)
         return rserv
@@ -762,15 +763,15 @@ export class AVSrouter {
   }
 
   unregisterStream(id, type, listener) {
-    console.trace()
+    // console.trace()
     const realm = this.getRealmObj(id, type)
     if (realm.listeners.has(listener)) {
       realm.listeners.delete(listener)
       this.cleanUpRealm(id)
     } else {
-      console.log('listener to remove not present', listener)
+      log('listener to remove not present', listener)
       for (const listy of realm.listeners) {
-        console.log('Set debug', listy)
+        log('Set debug', listy)
       }
       throw new Error('unRegisterStream failed ' + id + ' t ' + type)
     }
@@ -828,7 +829,7 @@ export class AVSrouter {
 
   cleanUpRealm(id) {
     const realm = this.realms[id]
-    /* console.log(
+    /* log(
       'CLEANUPREALM',
       realm.audio.listeners.size,
       realm.audio.localSources.size,
@@ -882,14 +883,14 @@ export class AVSrouter {
       while (true) {
         const { done, value } = await sessionReader.read()
         if (done) {
-          console.log('Server exited')
+          log('Server exited')
           break
         }
-        console.log('new session on avsrouter ')
+        log('new session on avsrouter ')
         this.handleSession(value)
       }
     } catch (error) {
-      console.log('problem in runServerLoop', error)
+      log('problem in runServerLoop', error)
     }
   }
 
@@ -949,14 +950,14 @@ export class AVSrouter {
       await session.ready
     } catch (error) {
       cleanUpStuff()
-      console.log('error session ready', error)
+      log('error session ready', error)
       return
     }
-    console.log('session is ready')
+    log('session is ready')
     session.closed
       .finally((reason) => {
         cleanUpStuff()
-        console.log(
+        log(
           'session was closed:',
           reason,
           'clientisrouter:',
@@ -966,7 +967,7 @@ export class AVSrouter {
         )
       })
       .catch((error) => {
-        console.log('Session error', error)
+        log('Session error', error)
       })
     // const authorized = false // we are not yet authorized
     // get a bidi stream for authorizations, a Datagram will not be reliable
@@ -978,7 +979,7 @@ export class AVSrouter {
         const areader = await authstream.readable.getReader()
         // now we read all available data till the end for the token
         const timeout = setTimeout(() => {
-          console.log('authorization timeout')
+          log('authorization timeout')
           session.close({ reason: 'authorization timeout', closeCode: 408 })
         }, 10 * 1000) // one second max
         const readarr = []
@@ -1000,12 +1001,12 @@ export class AVSrouter {
         try {
           await areader.cancel()
         } catch (error) {
-          console.log('error areader cancel:', error)
+          log('error areader cancel:', error)
         }
         try {
           await authstream.writable.close(200)
         } catch (error) {
-          console.log('error close writable', error)
+          log('error close writable', error)
         }
         authstream = null
         clearTimeout(timeout)
@@ -1037,12 +1038,12 @@ export class AVSrouter {
           primaryRealm = authtoken.primaryRealm
         }
       } catch (error) {
-        console.log('authorization stream failed', error)
+        log('authorization stream failed', error)
         try {
           await new Promise((resolve) => setInterval(resolve, 1000)) // slow down potential attackers
           session.close({ reason: 'authorization failed', closeCode: 401 })
         } catch (error) {
-          console.log('auth failed session close failed', error)
+          log('auth failed session close failed', error)
         }
         return
       }
@@ -1059,7 +1060,7 @@ export class AVSrouter {
               closeCode: 507
             })
           } catch (error) {
-            console.log('Error emergency session close', error)
+            log('Error emergency session close', error)
           }
           this.updateDispatch() // update the dispatcher
           return
@@ -1162,7 +1163,7 @@ export class AVSrouter {
 
         return { next, nextspki, tickets: routetics, client, realm } // todo add fetch logic
       } catch (error) {
-        console.log('problem decoding routing ticket', error)
+        log('problem decoding routing ticket', error)
         return undefined
       }
     }
@@ -1201,8 +1202,8 @@ export class AVSrouter {
           }
         } catch (error) {
           if (!streamerror) {
-            console.log('first writeStat failed err:', error)
-            console.log('first writeStat failed writing', chunk.message)
+            log('first writeStat failed err:', error)
+            log('first writeStat failed writing', chunk.message)
             streamerror = 'writeStatfailed'
           }
         }
@@ -1232,9 +1233,9 @@ export class AVSrouter {
 
       let curpaketsize
       const paketstat = (paket) => {
-        if (clientIsRouter) console.log('send Paket to router cIR', paket)
+        if (clientIsRouter) log('send Paket to router cIR', paket)
         if (streamerror) {
-          console.log('debug paket input', streamerror)
+          log('debug paket input', streamerror)
           console.trace()
         }
         if (paket.paketstart) {
@@ -1244,7 +1245,7 @@ export class AVSrouter {
             time: Date.now(),
             timestamp: new Decimal128(paket.timestamp.toString())
           }).catch((error) => {
-            console.log('problem stat:', error)
+            log('problem stat:', error)
             streamerror = 'problem stat'
           })
         } else if (paket.paketend) {
@@ -1254,7 +1255,7 @@ export class AVSrouter {
             task: 'end',
             size: curpaketsize
           }).catch((error) => {
-            console.log('problem stat:', error)
+            log('problem stat:', error)
             streamerror = 'problem stat'
           })
           curpaketsize = 0
@@ -1274,13 +1275,13 @@ export class AVSrouter {
             if (chunk.paket) {
               if (!args.isRouter) paketstat(chunk)
               // maybe also test if arraybuffer
-              // if (args.isRouter) console.log('FIX QUAL READ')
+              // if (args.isRouter) log('FIX QUAL READ')
               paketcommitter(chunk)
             } else {
               let store = false
               if (chunk.task && chunk.task === 'decoderconfig') {
                 store = true
-                console.log('decoderconfig', chunk)
+                log('decoderconfig', chunk)
               } else if (chunk.task && chunk.task === 'suspendQuality') {
                 store = false
                 suspendQuality()
@@ -1299,7 +1300,7 @@ export class AVSrouter {
           }
         }
       } catch (error) {
-        console.log('error processIncomingStream', error)
+        log('error processIncomingStream', error)
       }
       streamerror = 'stream is closed'
       try {
@@ -1307,15 +1308,15 @@ export class AVSrouter {
         streamreader.releaseLock()
         if (streamwriter) streamwriter.releaseLock()
         /* await stream.writable.close()
-        console.log('mark prob 4')
+        log('mark prob 4')
         await stream.readable.cancel()
-        console.log('mark prob 6') */ // not needed
+        log('mark prob 6') */ // not needed
       } catch (error) {
-        console.log('error cleanup processIncomingStream', error)
+        log('error cleanup processIncomingStream', error)
       }
     }
     const processOutgoingStream = async (args) => {
-      // console.log('processOutgoingStream', args)
+      // log('processOutgoingStream', args)
       // TODO check AUTHENTIFICATION
       let streamreader = args.streamReader
       const stream = args.stream
@@ -1351,7 +1352,7 @@ export class AVSrouter {
           try {
             outgoingpipe.addPaket(paket)
           } catch (error) {
-            console.log('error in sendInitialMessages 1', error)
+            log('error in sendInitialMessages 1', error)
           }
         }
         let sendInitialMessages = this.getSendInitialMessages(
@@ -1375,7 +1376,7 @@ export class AVSrouter {
             if (newqual !== curqual) {
               waitpaketstart = 1 // we need a key frame
               curqual = newqual
-              console.log('new quality', curqual)
+              log('new quality', curqual)
               if (paketremain > 0) {
                 // we finish the package with garbage, intentionelly uninitalized
                 const fakearray = new Uint8Array(new ArrayBuffer(paketremain))
@@ -1387,7 +1388,7 @@ export class AVSrouter {
               }
               // if changed may be emit an information for client ? TODO
               sendInitialMessages(curqual).catch((error) => {
-                console.log('Problem sendInitialMessages', error)
+                log('Problem sendInitialMessages', error)
               }) // no await!
             }
           }
@@ -1404,7 +1405,7 @@ export class AVSrouter {
                 nextqual = undefined
               }
               if (newid) {
-                console.log('change id unregister stream peek', newid, curid)
+                log('change id unregister stream peek', newid, curid)
                 if (curid && curid !== 'sleep')
                   this.unregisterStream(curid, type, writeChunk)
                 sendInitialMessages = this.getSendInitialMessages(
@@ -1419,12 +1420,12 @@ export class AVSrouter {
                 newid = undefined
               }
               sendInitialMessages(curqual).catch((error) => {
-                console.log('Problem sendInitialMessages2', error)
+                log('Problem sendInitialMessages2', error)
               }) // no await! // init the decoder // no await
               for (const el of qualchangeStor) {
                 inpaket = true
                 if (el.paketend) inpaket = false
-                // if (args.fixedQuality) console.log('FIX QUAL WRITE 3')
+                // if (args.fixedQuality) log('FIX QUAL WRITE 3')
                 outgoingpipe.addPaket(el)
               }
               qualchangeStor = []
@@ -1457,20 +1458,20 @@ export class AVSrouter {
               if (chunk.paketremain) paketremain = chunk.paketremain
               else paketremain = 0
               outgoingbuffer += chunk.paket.byteLength
-              // if (args.fixedQuality) console.log('FIX QUAL WRITE 1', quality)
-              // console.log('Pakets in wait', type, paketsinwait, outgoingbuffer)
+              // if (args.fixedQuality) log('FIX QUAL WRITE 1', quality)
+              // log('Pakets in wait', type, paketsinwait, outgoingbuffer)
               paketsinwait++
               outgoingpipe.addPaket(chunk)
 
-              // if (args.fixedQuality) console.log('FIX QUAL WRITE 1a', quality)
+              // if (args.fixedQuality) log('FIX QUAL WRITE 1a', quality)
             } else if (chunk.message) {
               // message are always passed, no delay there
-              // if (args.fixedQuality) console.log('FIX QUAL WRITE 2')
+              // if (args.fixedQuality) log('FIX QUAL WRITE 2')
               outgoingpipe.addPaket(chunk)
             }
           } catch (error) {
             if (writefailedres) {
-              console.log('writefailed', error)
+              log('writefailed', error)
               writefailedres('writefailed')
               writefailedres = undefined
             }
@@ -1482,6 +1483,7 @@ export class AVSrouter {
           let dropuntilkeyframe = 10 // support max 10 layers, should be save
           let curdroptime = type === 'audio' ? 100 : 40 // video should be dropped faster
           let temporalLayerId = 0
+          let candecreaseQual = true
           // eslint-disable-next-line no-unmodified-loop-condition
           while (running && streamrunning()) {
             try {
@@ -1492,7 +1494,7 @@ export class AVSrouter {
                 if (chunk.temporalLayerId !== undefined)
                   temporalLayerId = chunk.temporalLayerId
                 else {
-                  console.log(
+                  log(
                     'PANIC PANIC PANIC no TEMPORAL LAYER',
                     type,
                     chunk.temporalLayerId
@@ -1510,7 +1512,7 @@ export class AVSrouter {
                 // we should use hysteresis, once we drop we drop completely
                 if (chunk.paketstart && chunk.incomtime) {
                   if (now - chunk.incomtime > curdroptime) {
-                    console.log(
+                    log(
                       'outgoing writer DROP, time delay',
                       type,
                       temporalLayerId,
@@ -1518,6 +1520,15 @@ export class AVSrouter {
                       curdroptime,
                       router
                     )
+                    // if we are jammed for 1 second, we should decrease quality
+                    if (now - chunk.incomtime > 1000 && candecreaseQual) {
+                      const newqual = decreaseQual(curqual)
+                      log('decqual inside DROP', newqual, nextqual)
+                      if (newqual !== curqual) {
+                        nextqual = newqual
+                        qualchangeStor = [] // reset any already ongoing change
+                      }
+                    }
                     dropcurrentpaketwrite = true
                     curdroptime = Math.max(20, curdroptime - 30)
                     if (
@@ -1528,6 +1539,7 @@ export class AVSrouter {
                     if (chunk.keyframe) dropuntilkeyframe = 0 // if we have a keyframe and drop, we must drop until the next one
                   } else {
                     curdroptime = type === 'audio' ? 100 : 40 // reset
+                    candecreaseQual = true
                   }
                 }
                 if (
@@ -1543,12 +1555,12 @@ export class AVSrouter {
                   dropcurrentpaketwrite = false
                 }
               } else if (chunk.message) {
-                // console.log('messagesend', chunk.message.byteLength)
+                // log('messagesend', chunk.message.byteLength)
                 await streamwriterOut.write(chunk.message)
               }
             } catch (error) {
               if (writefailedres) {
-                console.log('writefailed writing', error)
+                log('writefailed writing', error)
                 writefailedres('writefailed')
                 writefailedres = undefined
               }
@@ -1568,18 +1580,18 @@ export class AVSrouter {
                 return
               } else if (message.task === 'incQual') {
                 const newqual = increaseQual(curqual)
-                console.log('incqual', newqual, nextqual)
                 if (newqual !== curqual) {
                   nextqual = newqual
                   qualchangeStor = [] // reset any already ongoing change
                 }
+                log('incqual', newqual, nextqual)
               } else if (message.task === 'decQual') {
                 const newqual = decreaseQual(curqual)
-                console.log('decqual', newqual, nextqual)
                 if (newqual !== curqual) {
                   nextqual = newqual
                   qualchangeStor = [] // reset any already ongoing change
                 }
+                log('decqual', newqual, nextqual)
               } else if (message.task === 'chgId') {
                 let messid
                 let dectics
@@ -1590,17 +1602,17 @@ export class AVSrouter {
                   })
                   if (dectics) {
                     messid = dectics.client
-                    console.log('client info for change', dectics)
+                    log('client info for change', dectics)
                   }
                 }
-                console.log('incoming change', curid, messid)
+                log('incoming change', curid, messid)
 
                 if (curid !== messid) {
                   // we do not need the next line, writeChunk takes care about unregistering
                   // this.unregisterStream(curid, type, writeChunk)
                   // check if stream is available and not acquire it from remote
                   if (messid) {
-                    console.log('change to', messid)
+                    log('change to', messid)
                     // TODO check AUTHENTIFICATION, done in the ticket
                     if (dectics) {
                       if (!clientsRegistered.has(dectics.client)) {
@@ -1642,7 +1654,7 @@ export class AVSrouter {
         }
         await Promise.race([reading(), writefailed, writing()])
       } catch (error) {
-        console.log('error processOutgoingStream', error)
+        log('error processOutgoingStream', error)
       }
       outgoingpipe.flush()
       try {
@@ -1655,11 +1667,11 @@ export class AVSrouter {
         streamwriterOut.releaseLock()
         streamwriterOut = undefined
         /* await stream.readable.cancel()
-        console.log('mark prob 10')
+        log('mark prob 10')
         await stream.writable.close()
-        console.log('mark prob 11') */ // not needed
+        log('mark prob 11') */ // not needed
       } catch (error) {
-        console.log('error cleanup processIncomingStream', error)
+        log('error cleanup processIncomingStream', error)
       }
     }
 
@@ -1670,13 +1682,13 @@ export class AVSrouter {
       const streams = {} // indexed by quality
       if (!fetchers[id]) fetchers[id] = {}
       if (fetchers[id][type]) {
-        console.log('double fetcher', id, type, fetchers[id][type])
-        console.log('fetcher state', fetchers)
-        console.log('fetchers write', fetchersWrite[id])
+        log('double fetcher', id, type, fetchers[id][type])
+        log('fetcher state', fetchers)
+        log('fetchers write', fetchersWrite[id])
         console.trace()
         throw new Error('Should not happen double fetcher')
       }
-      console.log('PROCESSTREAMFETCHER mark1')
+      log('PROCESSTREAMFETCHER mark1')
       fetchers[id][type] = streams
 
       const writeTest = async (chunk, pid, quality) => {
@@ -1717,14 +1729,14 @@ export class AVSrouter {
             })
               .finally(() => {
                 if (streams[quality] === stream) delete streams[quality]
-                console.log('PROCESSSTREAMFETCHER finally after', streams)
+                log('PROCESSSTREAMFETCHER finally after', streams)
               })
               .catch((error) =>
-                console.log('fetch processOutgoing Stream problem', error)
+                log('fetch processOutgoing Stream problem', error)
               )
             // ok now we can install, sth that passes on the data?
           } catch (error) {
-            console.log('fetch streams error:', cleanupEntered, error)
+            log('fetch streams error:', cleanupEntered, error)
             // throw new Error('failure fetch stream:' + error) // do not break
           }
         }
@@ -1733,8 +1745,8 @@ export class AVSrouter {
       this.registerStream(id, type, writeTest)
       if (!fetchersWrite[id]) fetchersWrite[id] = {}
       if (fetchersWrite[id][type]) {
-        console.log('double fetcher write', id, type, fetchers[id][type])
-        console.log('fetcher state', fetchers)
+        log('double fetcher write', id, type, fetchers[id][type])
+        log('fetcher state', fetchers)
         throw new Error('Should not happen double fetcher write')
       }
       fetchersWrite[id][type] = writeTest
@@ -1754,11 +1766,11 @@ export class AVSrouter {
             // const closes = streams.map((stream) => stream.writable.close())
             // await Promise.all([/* ...cancels, * ...closes])
           } catch (error) {
-            console.log('processRemoveFetcher: ', error)
+            log('processRemoveFetcher: ', error)
           }
         }
         closestreams().catch((error) => {
-          console.log('Problem ProcessRemoveStreamFetcher streams:', error)
+          log('Problem ProcessRemoveStreamFetcher streams:', error)
         })
       }
       if (fetchersWrite[id] && fetchersWrite[id][type]) {
@@ -1876,7 +1888,7 @@ export class AVSrouter {
                 streamReader.releaseLock()
                 await stream.readable.cancel(403)
                 break
-              } else console.log('NOP')
+              } else log('NOP')
             } else {
               pspos = 21
               // case clientIsRouter
@@ -1947,7 +1959,7 @@ export class AVSrouter {
                 })
                 pspos = 31
               } else {
-                console.log('unknown command close', message)
+                log('unknown command close', message)
                 streamReader.releaseLock()
                 await stream.readable.cancel(400)
                 break
@@ -1957,18 +1969,18 @@ export class AVSrouter {
             pspos = 32
             garbage++
             if (garbage > 10) {
-              console.log('reject stream with GARBAGE')
+              log('reject stream with GARBAGE')
               stream.close(400)
               // or should we disconnect the whole session?
               break
             }
           }
-          console.log('paket loop end')
+          log('paket loop end')
           pspos = 33
         }
-        console.log('processStream exited')
+        log('processStream exited')
       } catch (error) {
-        console.log('error in processStream', pspos, error)
+        log('error in processStream', pspos, error)
       }
       // do not add anything outside the try catch
     }
@@ -1982,19 +1994,19 @@ export class AVSrouter {
         while (running) {
           const bidistr = await bidiReader.read()
           if (bidistr.done) {
-            console.log('bidiReader terminated', clientIsRouter, router)
+            log('bidiReader terminated', clientIsRouter, router)
             break
           }
           if (bidistr.value) {
             bidicount++
-            console.log('incoming bidirectional stream', bidicount)
+            log('incoming bidirectional stream', bidicount)
             processStream(bidistr.value).catch((error) => {
-              console.log('sP problem processStream', error)
+              log('sP problem processStream', error)
             })
           }
         }
       } catch (error) {
-        console.log('bidirectional reader exited with', error)
+        log('bidirectional reader exited with', error)
       }
     }
     const requestProcess = async () => {
@@ -2005,7 +2017,7 @@ export class AVSrouter {
           try {
             await bidiWriter.write(chunk.message)
           } catch (error) {
-            console.log('Bidiwriter failed:', error)
+            log('Bidiwriter failed:', error)
             throw new Error('Bidiwriter failed:', error)
           }
         }
@@ -2020,7 +2032,7 @@ export class AVSrouter {
                 closeCode: 501
               })
             } catch (error) {
-              console.log('problem during close request:', error)
+              log('problem during close request:', error)
               break
             }
             break
@@ -2042,7 +2054,7 @@ export class AVSrouter {
                 writFunc
               )
             } catch (error) {
-              console.log('problem during get request:', error)
+              log('problem during get request:', error)
               break
             }
           }
@@ -2060,7 +2072,7 @@ export class AVSrouter {
                 writFunc
               )
             } catch (error) {
-              console.log('problem during stop request:', error)
+              log('problem during stop request:', error)
               break
             }
           }
@@ -2069,23 +2081,23 @@ export class AVSrouter {
         try {
           bidiWriter.releaseLock()
         } catch (error) {
-          console.log('problem releasing Writer', error)
+          log('problem releasing Writer', error)
         }
         try {
           // bidistrCtrl.writable.close(501)
           await bidistrCtrl.readable.cancel(501)
         } catch (error) {
-          console.log('problem closing stream', error)
+          log('problem closing stream', error)
         }
       } catch (error) {
-        console.log('Problem during requests:', error)
+        log('Problem during requests:', error)
       }
     }
     try {
       if (router) await Promise.all([streamProcess(), requestProcess()])
       else await Promise.all([streamProcess()])
     } catch (error) {
-      console.log('problem in streamProcess/requestProcess', error)
+      log('problem in streamProcess/requestProcess', error)
     }
   }
 }
