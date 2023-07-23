@@ -895,7 +895,7 @@ export class AVSrouter {
   }
 
   async handleSession(session, requester) {
-    let running = true
+    let sessionRunning = true
     const router = !!requester
     let counted = false
     let clientIsRouter = false
@@ -956,6 +956,7 @@ export class AVSrouter {
     log('session is ready')
     session.closed
       .finally((reason) => {
+        sessionRunning = false
         cleanUpStuff()
         log(
           'session was closed:',
@@ -1176,6 +1177,7 @@ export class AVSrouter {
       const type = args.type
       const parseHelper = args.parseHelper
       const quality = args.quality
+      const incomStreamRunning = true
 
       const paketcommitter = this.getPaketCommiter(
         id,
@@ -1268,7 +1270,7 @@ export class AVSrouter {
         streamwriter = await stream.writable.getWriter()
 
         // eslint-disable-next-line no-unmodified-loop-condition
-        while (running) {
+        while (sessionRunning && incomStreamRunning) {
           // first the paket, as they are processed partially
           while (parseHelper.hasMessageOrPaket()) {
             const chunk = parseHelper.getMessageOrPaket()
@@ -1321,6 +1323,7 @@ export class AVSrouter {
       let streamreader = args.streamReader
       const stream = args.stream
       const streamrunning = args.running || (() => true)
+      let outStreamRunning = true
       let curid = args.id
       let newid
       const type = args.type
@@ -1475,7 +1478,7 @@ export class AVSrouter {
               writefailedres('writefailed')
               writefailedres = undefined
             }
-            running = false
+            outStreamRunning = false
           }
         }
         const writing = async () => {
@@ -1484,9 +1487,9 @@ export class AVSrouter {
           let curdroptime = type === 'audio' ? 100 : 40 // video should be dropped faster
           let temporalLayerId = 0
           let candecreaseQual = true
-          // eslint-disable-next-line no-unmodified-loop-condition
-          while (running && streamrunning()) {
-            try {
+          try {
+            // eslint-disable-next-line no-unmodified-loop-condition
+            while (sessionRunning && outStreamRunning && streamrunning()) {
               const chunk = await outgoingpipe.getPaket()
               const now = Date.now()
 
@@ -1558,99 +1561,107 @@ export class AVSrouter {
                 // log('messagesend', chunk.message.byteLength)
                 await streamwriterOut.write(chunk.message)
               }
-            } catch (error) {
-              if (writefailedres) {
-                log('writefailed writing', error)
-                writefailedres('writefailed')
-                writefailedres = undefined
-              }
-              running = false
             }
+            await streamwriterOut.close()
+          } catch (error) {
+            if (writefailedres) {
+              log('writefailed writing', error)
+              writefailedres('writefailed')
+              writefailedres = undefined
+            }
+            outStreamRunning = false
           }
+          streamwriterOut.releaseLock()
+          streamwriterOut = undefined
         }
         this.registerStream(curid, type, writeChunk)
         const reading = async () => {
-          // eslint-disable-next-line no-unmodified-loop-condition
-          while (running && streamrunning()) {
-            while (parseHelper.hasMessageOrPaket()) {
-              // only messages for controlling
-              const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
-              if (message.task === 'close') {
-                running = false
-                return
-              } else if (message.task === 'incQual') {
-                const newqual = increaseQual(curqual)
-                if (newqual !== curqual) {
-                  nextqual = newqual
-                  qualchangeStor = [] // reset any already ongoing change
-                }
-                log('incqual', newqual, nextqual)
-              } else if (message.task === 'decQual') {
-                const newqual = decreaseQual(curqual)
-                if (newqual !== curqual) {
-                  nextqual = newqual
-                  qualchangeStor = [] // reset any already ongoing change
-                }
-                log('decqual', newqual, nextqual)
-              } else if (message.task === 'chgId') {
-                let messid
-                let dectics
-                if (message.tickets) {
-                  dectics = await ticketDecode({
-                    tickets: message.tickets,
-                    dir: 'outgoing' // routers perspective
-                  })
-                  if (dectics) {
-                    messid = dectics.client
-                    log('client info for change', dectics)
+          try {
+            // eslint-disable-next-line no-unmodified-loop-condition
+            while (sessionRunning && outStreamRunning && streamrunning()) {
+              while (parseHelper.hasMessageOrPaket()) {
+                // only messages for controlling
+                const message = parseHelper.getMessageOrPaket() // process them, e.g. change quality of stream
+                if (message.task === 'incQual') {
+                  const newqual = increaseQual(curqual)
+                  if (newqual !== curqual) {
+                    nextqual = newqual
+                    qualchangeStor = [] // reset any already ongoing change
                   }
-                }
-                log('incoming change', curid, messid)
-
-                if (curid !== messid) {
-                  // we do not need the next line, writeChunk takes care about unregistering
-                  // this.unregisterStream(curid, type, writeChunk)
-                  // check if stream is available and not acquire it from remote
-                  if (messid) {
-                    log('change to', messid)
-                    // TODO check AUTHENTIFICATION, done in the ticket
+                  log('incqual', newqual, nextqual)
+                } else if (message.task === 'decQual') {
+                  const newqual = decreaseQual(curqual)
+                  if (newqual !== curqual) {
+                    nextqual = newqual
+                    qualchangeStor = [] // reset any already ongoing change
+                  }
+                  log('decqual', newqual, nextqual)
+                } else if (message.task === 'chgId') {
+                  let messid
+                  let dectics
+                  if (message.tickets) {
+                    dectics = await ticketDecode({
+                      tickets: message.tickets,
+                      dir: 'outgoing' // routers perspective
+                    })
                     if (dectics) {
-                      if (!clientsRegistered.has(dectics.client)) {
-                        this.registerClient(
-                          dectics.client,
-                          clientIsRouter,
-                          router
-                        )
-                        clientsRegistered.add(dectics.client)
-                      }
+                      messid = dectics.client
+                      log('client info for change', dectics)
                     }
-                    if (dectics && dectics.next) {
-                      await this.acquireStreams({
-                        next: dectics.next,
-                        nextspki: dectics.nextspki,
-                        tickets: dectics.tickets,
-                        id: messid,
-                        type
-                      })
-                    }
-                    newid = messid
-                    const checkqual = fixQuality(curqual)
-                    if (checkqual !== curqual) nextqual = checkqual
-
-                    this.registerStream(newid, type, writeChunk)
-                  } else {
-                    newid = 'sleep'
                   }
-                  qualchangeStor = [] // reset any already ongoing change
+                  log('incoming change', curid, messid)
+
+                  if (curid !== messid) {
+                    // we do not need the next line, writeChunk takes care about unregistering
+                    // this.unregisterStream(curid, type, writeChunk)
+                    // check if stream is available and not acquire it from remote
+                    if (messid) {
+                      log('change to', messid)
+                      // TODO check AUTHENTIFICATION, done in the ticket
+                      if (dectics) {
+                        if (!clientsRegistered.has(dectics.client)) {
+                          this.registerClient(
+                            dectics.client,
+                            clientIsRouter,
+                            router
+                          )
+                          clientsRegistered.add(dectics.client)
+                        }
+                      }
+                      if (dectics && dectics.next) {
+                        await this.acquireStreams({
+                          next: dectics.next,
+                          nextspki: dectics.nextspki,
+                          tickets: dectics.tickets,
+                          id: messid,
+                          type
+                        })
+                      }
+                      newid = messid
+                      const checkqual = fixQuality(curqual)
+                      if (checkqual !== curqual) nextqual = checkqual
+
+                      this.registerStream(newid, type, writeChunk)
+                    } else {
+                      newid = 'sleep'
+                    }
+                    qualchangeStor = [] // reset any already ongoing change
+                  }
                 }
               }
+
+              const readres = await streamreader.read()
+
+              if (readres.value) parseHelper.addPaket(readres.value)
+              if (readres.done) break
             }
-
-            const readres = await streamreader.read()
-
-            if (readres.value) parseHelper.addPaket(readres.value)
-            if (readres.done) break
+            // close the stream reader
+            await streamreader.cancel()
+          } catch (error) {
+            log('reading failed', error)
           }
+          streamreader.releaseLock()
+          streamreader = undefined
         }
         await Promise.race([reading(), writefailed, writing()])
       } catch (error) {
@@ -1661,18 +1672,10 @@ export class AVSrouter {
         if (curid !== 'sleep') this.unregisterStream(curid, type, writeChunk)
         if (newid && newid !== 'sleep')
           this.unregisterStream(newid, type, writeChunk)
-
-        streamreader.releaseLock()
-        streamreader = undefined
-        streamwriterOut.releaseLock()
-        streamwriterOut = undefined
-        /* await stream.readable.cancel()
-        log('mark prob 10')
-        await stream.writable.close()
-        log('mark prob 11') */ // not needed
       } catch (error) {
         log('error cleanup processIncomingStream', error)
       }
+      outStreamRunning = false
     }
 
     // our stream fetcher
@@ -1796,7 +1799,7 @@ export class AVSrouter {
         pspos = 2
         let garbage = 0
         // eslint-disable-next-line no-unmodified-loop-condition
-        while (running) {
+        while (sessionRunning) {
           pspos = 3
           const paket = await streamReader.read()
           pspos = 4
@@ -1981,6 +1984,7 @@ export class AVSrouter {
         log('processStream exited')
       } catch (error) {
         log('error in processStream', pspos, error)
+        sessionRunning = false
       }
       // do not add anything outside the try catch
     }
@@ -1991,7 +1995,7 @@ export class AVSrouter {
       try {
         const bidiReader = session.incomingBidirectionalStreams.getReader()
         // eslint-disable-next-line no-unmodified-loop-condition
-        while (running) {
+        while (sessionRunning) {
           const bidistr = await bidiReader.read()
           if (bidistr.done) {
             log('bidiReader terminated', clientIsRouter, router)
