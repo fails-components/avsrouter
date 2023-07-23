@@ -31,7 +31,7 @@
     "eslint-plugin-prettier": "^3.4.1",
     "eslint-plugin-promise": "^4.3.1",
     "eslint-plugin-standard": "^4.1.0",
-    "nodemon": "^2.0.20",
+    "nodemon": "^3.0.1",
     "prettier": "^2.4.1"
   },
   "keywords": [
@@ -47,7 +47,7 @@
   },
   "homepage": "https://github.com/fails-components/avsrouter#readme",
   "dependencies": {
-    "@fails-components/webtransport": "^0.2.1",
+    "@fails-components/webtransport": "^0.2.2",
     "@fails-components/webtransport-ponyfill-websocket": "^0.0.9",
     "axios": "^0.27.2",
     "bson": "^4.6.3",
