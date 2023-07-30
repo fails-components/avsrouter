@@ -1374,25 +1374,28 @@ export class AVSrouter {
         writeChunk = async (chunk, pid, quality) => {
           const now = Date.now()
           if (now - lastpaket > 1000 && !args.fixedQuality) {
-            // recheck quality
+            // recheck if quality is available
             const newqual = fixQuality(curqual)
             if (newqual !== curqual) {
               waitpaketstart = 1 // we need a key frame
               curqual = newqual
-              log('new quality', curqual)
+              log('old quality stalled, set new quality', curqual)
               if (paketremain > 0) {
-                // we finish the package with garbage, intentionelly uninitalized
+                // we finish the package with garbage, intentionally uninitalized
                 const fakearray = new Uint8Array(new ArrayBuffer(paketremain))
                 for (let i = 0; i < paketremain - 1; i++) fakearray[i] = 0
-                fakearray[paketremain - 1] = 1
+                fakearray[paketremain - 1] = 1 // ? why 1?
                 outgoingpipe.addPaket(fakearray)
                 inpaket = false
                 paketremain = 0
               }
-              // if changed may be emit an information for client ? TODO
-              sendInitialMessages(curqual).catch((error) => {
-                log('Problem sendInitialMessages', error)
-              }) // no await!
+              // if changed may be emit an information for client ?
+              try {
+                await sendInitialMessages(curqual)
+              } catch (error) {
+                log('Problem sendInitialMessages2', error)
+                // no await! // init the decoder // no await, we do await!, it is the same queue
+              }
             }
           }
           if (
@@ -1406,6 +1409,14 @@ export class AVSrouter {
               if (nextqual) {
                 curqual = nextqual
                 nextqual = undefined
+                if (!newid) {
+                  try {
+                    await sendInitialMessages(curqual)
+                  } catch (error) {
+                    log('Problem sendInitialMessages2', error)
+                    // no await! // init the decoder // no await, we do await!, it is the same queue
+                  }
+                }
               }
               if (newid) {
                 log('change id unregister stream peek', newid, curid)
@@ -1422,9 +1433,12 @@ export class AVSrouter {
                 curid = newid
                 newid = undefined
               }
-              sendInitialMessages(curqual).catch((error) => {
-                log('Problem sendInitialMessages2', error)
-              }) // no await! // init the decoder // no await
+              try {
+                await sendInitialMessages(curqual)
+              } catch (error) {
+                log('Problem sendInitialMessages3', error)
+                // no await! // init the decoder // no await, we do await!, it is the same queue
+              }
               for (const el of qualchangeStor) {
                 inpaket = true
                 if (el.paketend) inpaket = false
@@ -1587,8 +1601,8 @@ export class AVSrouter {
                   if (newqual !== curqual) {
                     nextqual = newqual
                     qualchangeStor = [] // reset any already ongoing change
+                    log('incqual', newqual, nextqual)
                   }
-                  log('incqual', newqual, nextqual)
                 } else if (message.task === 'decQual') {
                   const newqual = decreaseQual(curqual)
                   if (newqual !== curqual) {
