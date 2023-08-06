@@ -164,8 +164,7 @@ class ParseHelper {
                 paketremain: 0, // payloadlen + hdrlen - towrite,
                 keyframe,
                 temporalLayerId,
-                timestamp,
-                incomtime: Date.now()
+                timestamp
               }
               // copy data, zero copy is not an advantage, since the overhead for distributing to too big
               const byteoff = workpaket.byteOffset + paketpos
@@ -202,6 +201,7 @@ class ParseHelper {
         } else {
           this.outpaketpos = 0
           this.outpaketlen = 0
+          this.outpaket.incomtime = Date.now()
           this.outputqueue.push(this.outpaket)
           delete this.outpaket
         }
