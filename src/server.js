@@ -121,14 +121,16 @@ const mainfunc = async () => {
     privKey: certificate.private
   }) */
     certificate = null
-    router.runServerLoop(http3serverv4)
-    // router.runServerLoop(http3serverv6)
+
 
     http3serverv4.startServer() // you can call destroy to remove the server
     console.log('http3 server started ipv4')
     readyhttp3 = true
     /* http3serverv6.startServer() // you can call destroy to remove the server
   console.log('server started ipv6') */
+
+    router.runServerLoop(http3serverv4)
+  // router.runServerLoop(http3serverv6)
   } catch (error) {
     console.log('http3error', error)
   }
