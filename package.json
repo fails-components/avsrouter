@@ -1,6 +1,6 @@
 {
   "name": "avsrouter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Audio, Video, Screensharing router using Webtransport and Websockets as fallback",
   "main": "src/server.js",
   "source": "src/server.js",
