@@ -1,15 +1,13 @@
-import { Http3Server } from '@fails-components/webtransport'
-import { WebTransportSocketServer } from '@fails-components/webtransport-ponyfill-websocket'
+import { HttpServer } from '@fails-components/webtransport'
 import { generateWebTransportCertificate } from './certificate.js'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { watchFile } from 'node:fs'
 import { AVSrouter } from './avsrouter.js'
-import { createServer as createServerHttp1 } from 'http'
-import { createServer as createServerHttps1 } from 'https'
 import { pid } from 'node:process'
 import { v4 as uuidv4 } from 'uuid'
 import express from 'express'
 import { DateTime } from 'luxon'
+import 'dotenv/config'
 
 const mainfunc = async () => {
   console.log(`This process is pid ${pid}`)
@@ -98,20 +96,41 @@ const mainfunc = async () => {
 
   console.log('certificate hash ', certificate.fingerprint)
   console.log('start http/3 Server')
-  let readyhttp3
+  let readyhttp
 
-  let http3serverv4
+  let httpserverv4
   // eslint-disable-next-line no-unused-vars
-  let http3serverv6
+  let httpserverv6
   try {
+    let certhttp2
+    let keyhttp2
+    if (process.env.AVSROUTERKEYPEM && process.env.AVSROUTERCERTPEM) {
+      // use the same as the http/3 server in case the variables are not set
+      try {
+        keyhttp2 = await readFile(process.env.AVSROUTERKEYPEM, {
+          encoding: 'utf8',
+          flag: 'r'
+        })
+        certhttp2 = await readFile(process.env.AVSROUTERCERTPEM, {
+          encoding: 'utf8',
+          flag: 'r'
+        })
+      } catch (error) {
+        console.log('Problem reading ssl keys, load them later...', error)
+      }
+    }
+
     const secret = uuidv4()
-    http3serverv4 = new Http3Server({
+    httpserverv4 = new HttpServer({
       port,
       host: process.env.AVSROUTERHOST,
       secret,
       cert: certificate.cert, // unclear if it is the correct format
       privKey: certificate.private,
-      spki: certificate.fingerprint
+      spki: certificate.fingerprint,
+      certhttp2,
+      keyhttp2,
+      reliability: 'both'
     })
     /* http3serverv6 = new Http3Server({
     port,
@@ -122,124 +141,83 @@ const mainfunc = async () => {
   }) */
     certificate = null
 
-
-    http3serverv4.startServer() // you can call destroy to remove the server
-    console.log('http3 server started ipv4')
-    readyhttp3 = true
+    httpserverv4.startServer() // you can call destroy to remove the server
+    console.log('combined http server started ipv4')
+    readyhttp = true
     /* http3serverv6.startServer() // you can call destroy to remove the server
   console.log('server started ipv6') */
 
-    router.runServerLoop(http3serverv4)
-  // router.runServerLoop(http3serverv6)
+    router.runServerLoop(httpserverv4)
+    // router.runServerLoop(http3serverv6)
   } catch (error) {
-    console.log('http3error', error)
+    console.log('http server error:', error)
   }
-  let readyhttp1
   let readyacme
 
   try {
-    console.log('start http/1 Server')
-    let server
-    let host = process.env.AVSROUTERHOST
-    if (
-      process.env.AVSROUTERWSURL &&
-      process.env.AVSROUTERWSURL.startsWith('ws://')
-    ) {
-      // http1
-      server = createServerHttp1()
-      readyacme = true
-      host = new URL(process.env.AVSROUTERURL).hostname
-    } else {
-      let options
-      try {
-        const key = await readFile(process.env.AVSROUTERKEYPEM, {
-          encoding: 'utf8',
-          flag: 'r'
-        })
-        const cert = await readFile(process.env.AVSROUTERCERTPEM, {
-          encoding: 'utf8',
-          flag: 'r'
-        })
-        options = {
-          key,
-          cert
-        }
-      } catch (error) {
-        console.log('Problem reading ssl keys, load them later...', error)
-      }
+    console.log('setup stuff for certificate updater')
+    const host = process.env.AVSROUTERHOST
 
-      // https1
-      server = createServerHttps1(options)
-      watchFile(
-        process.env.AVSROUTERCERTPEM,
-        { persistent: false },
-        async (cur, prev) => {
-          if (cur.mtime !== prev.mtime) {
-            try {
-              console.log('Reload certificates')
-              const key = await readFile(process.env.AVSROUTERKEYPEM, {
-                encoding: 'utf8',
-                flag: 'r'
-              })
-              const cert = await readFile(process.env.AVSROUTERCERTPEM, {
-                encoding: 'utf8',
-                flag: 'r'
-              })
-              server.setSecureContext({ key, cert })
-            } catch (error) {
-              console.log('Problem renewing certificates: ', error)
-            }
+    watchFile(
+      process.env.AVSROUTERCERTPEM,
+      { persistent: false },
+      async (cur, prev) => {
+        if (cur.mtime !== prev.mtime) {
+          try {
+            console.log('Reload certificates')
+            const key = await readFile(process.env.AVSROUTERKEYPEM, {
+              encoding: 'utf8',
+              flag: 'r'
+            })
+            const cert = await readFile(process.env.AVSROUTERCERTPEM, {
+              encoding: 'utf8',
+              flag: 'r'
+            })
+            httpserverv4.updateCert(cert, key, true /* http2only */)
+          } catch (error) {
+            console.log('Problem renewing certificates: ', error)
           }
         }
-      )
-      // server to answer challenges
-      const app = express()
+      }
+    )
+    // server to answer challenges
+    const app = express()
 
-      // app.use(express.urlencoded({ extended: true }))
-      // app.use(express.json())
-      /*
-      if (cfg.devmode) {
-        app.use(cors())
-      } */
-      // Kubernetes livelyness and readyness probes
-      app.get('/ready', (req, res) => {
-        if (readyhttp3 && readyhttp1 && readyacme) return res.send('Ready')
-        else res.status(500).send('Not ready')
-      })
-      app.get('/health', async (req, res) => {
-        res.send('Healthy')
-      })
-
-      app.use(
-        '/.well-known/acme-challenge',
-        express.static(
-          (process.env.AVSROUTERACMEHTTP1DIR
-            ? process.env.AVSROUTERACMEHTTP1DIR
-            : 'challenges') + '/.well-known/acme-challenge'
-        )
-      )
-
-      app.listen(80, host, function () {
-        console.log(
-          'Failsserver acme challenge server running:',
-          80,
-          ' host:',
-          host
-        )
-        readyacme = true
-      })
-    }
-    const wtsserver = new WebTransportSocketServer({
-      server,
-      port
+    // app.use(express.urlencoded({ extended: true }))
+    // app.use(express.json())
+    /*
+    if (cfg.devmode) {
+      app.use(cors())
+    } */
+    // Kubernetes livelyness and readyness probes
+    app.get('/ready', (req, res) => {
+      if (readyhttp && readyacme) return res.send('Ready')
+      else res.status(500).send('Not ready')
+    })
+    app.get('/health', async (req, res) => {
+      res.send('Healthy')
     })
 
-    router.runServerLoop(wtsserver)
-    wtsserver.startServer() // actually it is just listen....
-    console.log('http1 server started ipv4')
-    readyhttp1 = true
+    app.use(
+      '/.well-known/acme-challenge',
+      express.static(
+        (process.env.AVSROUTERACMEHTTP1DIR
+          ? process.env.AVSROUTERACMEHTTP1DIR
+          : 'challenges') + '/.well-known/acme-challenge'
+      )
+    )
+
+    app.listen(80, host, function () {
+      console.log(
+        'Failsserver acme challenge server running:',
+        80,
+        ' host:',
+        host
+      )
+      readyacme = true
+    })
   } catch (error) {
-    console.log('websocket error', error)
+    console.log('acme challenge error', error)
   }
 }
 mainfunc().catch((error) => {
