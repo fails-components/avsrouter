@@ -7,7 +7,6 @@ import { pid } from 'node:process'
 import { v4 as uuidv4 } from 'uuid'
 import express from 'express'
 import { DateTime } from 'luxon'
-import 'dotenv/config'
 
 const mainfunc = async () => {
   console.log(`This process is pid ${pid}`)
