@@ -46,9 +46,8 @@
   },
   "homepage": "https://github.com/fails-components/avsrouter#readme",
   "dependencies": {
-    "@fails-components/webtransport": "https://gitpkg.now.sh/fails-components/webtransport/main?http2",
-    "@fails-components/webtransport-transport-http3-quiche": "https://gitpkg.now.sh/fails-components/webtransport/transports/http3-quiche?http2",
-    "@fails-components/webtransport-ponyfill-websocket": "^0.0.12",
+    "@fails-components/webtransport": "^1.0.1",
+    "@fails-components/webtransport-transport-http3-quiche": "^1.0.1",
     "axios": "^1.6.0",
     "bson": "^4.6.3",
     "express": "^4.18.2",
@@ -56,7 +55,6 @@
     "jsonwebtoken": "^9.0.0",
     "luxon": "^3.3.0",
     "selfsigned": "^2.0.1",
-    "uuid": "^9.0.0",
-    "ws": "^8.8.1"
+    "uuid": "^9.0.0"
   }
 }
