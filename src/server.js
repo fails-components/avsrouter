@@ -102,11 +102,11 @@ const mainfunc = async () => {
   let httpserverv6
   try {
     let certhttp2
-    let keyhttp2
+    let privKeyhttp2
     if (process.env.AVSROUTERKEYPEM && process.env.AVSROUTERCERTPEM) {
       // use the same as the http/3 server in case the variables are not set
       try {
-        keyhttp2 = await readFile(process.env.AVSROUTERKEYPEM, {
+        privKeyhttp2 = await readFile(process.env.AVSROUTERKEYPEM, {
           encoding: 'utf8',
           flag: 'r'
         })
@@ -128,7 +128,7 @@ const mainfunc = async () => {
       privKey: certificate.private,
       spki: certificate.fingerprint,
       certhttp2,
-      keyhttp2,
+      privKeyhttp2,
       reliability: 'both'
     })
     /* http3serverv6 = new Http3Server({
