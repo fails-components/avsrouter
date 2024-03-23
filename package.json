@@ -46,7 +46,7 @@
   },
   "homepage": "https://github.com/fails-components/avsrouter#readme",
   "dependencies": {
-    "@fails-components/webtransport": "^1.0.7",
+    "@fails-components/webtransport": "^1.0.11",
     "@fails-components/webtransport-transport-http3-quiche": "^1.0.7",
     "axios": "^1.6.0",
     "bson": "^4.6.3",
