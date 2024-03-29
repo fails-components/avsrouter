@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.2
-FROM node:18-bullseye-slim
+FROM node:18-bookworm-slim
 
 ARG ENV
 
