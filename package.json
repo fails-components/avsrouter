@@ -51,7 +51,6 @@
     "axios": "^1.8.4",
     "bson": "^4.6.3",
     "express": "^4.21.2",
-    "fancy-log": "^2.0.0",
     "jsonwebtoken": "^9.0.0",
     "luxon": "^3.3.0",
     "selfsigned": "^2.0.1",

@@ -7,7 +7,13 @@ import jwt from 'jsonwebtoken'
 import axios from 'axios'
 import { webcrypto as crypto } from 'crypto'
 import { WebTransport } from '@fails-components/webtransport'
-import log from 'fancy-log'
+
+export function log() {
+  const date = new Date().toLocaleString('en', { hour12: false })
+  process.stdout.write('[' + date + '] ')
+  console.log.apply(console, arguments)
+  return this
+}
 
 class AsyncPaketPipe {
   constructor() {

@@ -2,14 +2,14 @@ import { HttpServer } from '@fails-components/webtransport'
 import { generateWebTransportCertificate } from './certificate.js'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { watchFile } from 'node:fs'
-import { AVSrouter } from './avsrouter.js'
+import { AVSrouter, log } from './avsrouter.js'
 import { pid } from 'node:process'
 import { v4 as uuidv4 } from 'uuid'
 import express from 'express'
 import { DateTime } from 'luxon'
 
 const mainfunc = async () => {
-  console.log(`This process is pid ${pid}`)
+  log(`This process is pid ${pid}`)
 
   let certificate = null
   try {
@@ -25,7 +25,7 @@ const mainfunc = async () => {
         certificate = null // recreate, makes no sense to go online with a short lived cert
       }
     } catch (error) {
-      console.log('error reading certifcate', error)
+      log('error reading certifcate', error)
     }
   } catch (error) {
     // be silent if file does not exist
@@ -46,7 +46,7 @@ const mainfunc = async () => {
       './config/certificatecache.json',
       JSON.stringify(certificate),
       (err) => {
-        if (err) console.log('write certificate cache error', err)
+        if (err) log('write certificate cache error', err)
       }
     )
   }
@@ -58,7 +58,7 @@ const mainfunc = async () => {
     // now get a random number from
     if (endtime < DateTime.local({ zone }).endOf('day')) {
       // really,  should not happen
-      console.log(
+      log(
         'Generated certifcate expires before the end of day, exit immediately!'
       )
       process.exit(0)
@@ -69,17 +69,17 @@ const mainfunc = async () => {
       .startOf('day')
       .plus({ minutes: 60 + Math.random() * 180 })
     if (terminationtime > endtime) terminationtime.minus({ days: 1 }) // after certificate expiration, so minus 1 day
-    console.log(
+    log(
       'Certificate will expire at ',
       endtime.toLocaleString(DateTime.DATETIME_FULL)
     )
-    console.log(
+    log(
       'Restart scheduled at ',
       terminationtime.toLocaleString(DateTime.DATETIME_FULL)
     )
     setInterval(() => {
       if (DateTime.now() > terminationtime) {
-        console.log(
+        log(
           'Restarting (terminating) since certificate, will expire soon at',
           endtime.toLocaleString(DateTime.DATETIME_FULL)
         )
@@ -93,8 +93,8 @@ const mainfunc = async () => {
 
   const router = new AVSrouter({ spki: certificate.fingerprint, port })
 
-  console.log('certificate hash ', certificate.fingerprint)
-  console.log('start http/3 Server')
+  log('certificate hash ', certificate.fingerprint)
+  log('start http/3 Server')
   let readyhttp
 
   let httpserverv4
@@ -115,7 +115,7 @@ const mainfunc = async () => {
           flag: 'r'
         })
       } catch (error) {
-        console.log('Problem reading ssl keys, load them later...', error)
+        log('Problem reading ssl keys, load them later...', error)
       }
     }
 
@@ -141,20 +141,20 @@ const mainfunc = async () => {
     certificate = null
 
     httpserverv4.startServer() // you can call destroy to remove the server
-    console.log('combined http server started ipv4')
+    log('combined http server started ipv4')
     readyhttp = true
     /* http3serverv6.startServer() // you can call destroy to remove the server
-  console.log('server started ipv6') */
+  log('server started ipv6') */
 
     router.runServerLoop(httpserverv4)
     // router.runServerLoop(http3serverv6)
   } catch (error) {
-    console.log('http server error:', error)
+    log('http server error:', error)
   }
   let readyacme
 
   try {
-    console.log('setup stuff for certificate updater')
+    log('setup stuff for certificate updater')
     const host = process.env.AVSROUTERHOST
 
     watchFile(
@@ -163,7 +163,7 @@ const mainfunc = async () => {
       async (cur, prev) => {
         if (cur.mtime !== prev.mtime) {
           try {
-            console.log('Reload certificates')
+            log('Reload certificates')
             const key = await readFile(process.env.AVSROUTERKEYPEM, {
               encoding: 'utf8',
               flag: 'r'
@@ -174,7 +174,7 @@ const mainfunc = async () => {
             })
             httpserverv4.updateCert(cert, key, true /* http2only */)
           } catch (error) {
-            console.log('Problem renewing certificates: ', error)
+            log('Problem renewing certificates: ', error)
           }
         }
       }
@@ -207,18 +207,13 @@ const mainfunc = async () => {
     )
 
     app.listen(80, host, function () {
-      console.log(
-        'Failsserver acme challenge server running:',
-        80,
-        ' host:',
-        host
-      )
+      log('Failsserver acme challenge server running:', 80, ' host:', host)
       readyacme = true
     })
   } catch (error) {
-    console.log('acme challenge error', error)
+    log('acme challenge error', error)
   }
 }
 mainfunc().catch((error) => {
-  console.log('Unhandled error in mainfunc:', error)
+  log('Unhandled error in mainfunc:', error)
 })
