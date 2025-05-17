@@ -1195,6 +1195,8 @@ export class AVSrouter {
       const quality = args.quality
       const incomStreamRunning = true
 
+      slog('incoming stream with id:', id, 'and type:', type, 'qual:', quality)
+
       const paketcommitter = this.getPaketCommiter(
         id,
         type,
@@ -1318,7 +1320,16 @@ export class AVSrouter {
           }
         }
       } catch (error) {
-        slog('error processIncomingStream', error)
+        slog(
+          'error processIncomingStream with id:',
+          id,
+          'and type:',
+          type,
+          'qual:',
+          quality,
+          'and error:',
+          error
+        )
       }
       streamerror = 'stream is closed'
       try {
@@ -1352,6 +1363,8 @@ export class AVSrouter {
       let fixQuality = this.getFixQuality(curid, type)
       let increaseQual = this.getIncreaseQual(curid, type)
       let decreaseQual = this.getDecreaseQual(curid, type)
+
+      slog('outgoing stream with id:', curid, 'and type:', type)
 
       let dropmessage
 
@@ -1636,7 +1649,7 @@ export class AVSrouter {
                     })
                     if (dectics) {
                       messid = dectics.client
-                      slog('client info for change', dectics)
+                      slog('client info for change', JSON.stringify(dectics))
                     }
                   }
                   slog('incoming change', curid, messid)
