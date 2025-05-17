@@ -196,20 +196,21 @@ const mainfunc = async () => {
     app.get('/health', async (req, res) => {
       res.send('Healthy')
     })
-
-    app.use(
-      '/.well-known/acme-challenge',
-      express.static(
-        (process.env.AVSROUTERACMEHTTP1DIR
-          ? process.env.AVSROUTERACMEHTTP1DIR
-          : 'challenges') + '/.well-known/acme-challenge'
+    if (process.env.AVSROUTERACMEOFF !== '1') {
+      app.use(
+        '/.well-known/acme-challenge',
+        express.static(
+          (process.env.AVSROUTERACMEHTTP1DIR
+            ? process.env.AVSROUTERACMEHTTP1DIR
+            : 'challenges') + '/.well-known/acme-challenge'
+        )
       )
-    )
 
-    app.listen(80, host, function () {
-      log('Failsserver acme challenge server running:', 80, ' host:', host)
-      readyacme = true
-    })
+      app.listen(80, host, function () {
+        log('Failsserver acme challenge server running:', 80, ' host:', host)
+        readyacme = true
+      })
+    }
   } catch (error) {
     log('acme challenge error', error)
   }
