@@ -1428,14 +1428,15 @@ export class AVSrouter {
             }
           }
           if (
-            (nextqual || newid) &&
-            quality === (nextqual || curqual) &&
+            (typeof nextqual !== 'undefined' || typeof newid !== 'undefined') &&
+            (quality === (nextqual || curqual) ||
+              (nextqual || curqual) === -1) &&
             (pid === (newid || curid) || newid === 'sleep') &&
             ((chunk.paketstart && chunk.keyframe) || qualchangeStor.length > 0)
           ) {
             if (!inpaket) {
               // we can change
-              if (nextqual) {
+              if (typeof nextqual !== 'undefined') {
                 curqual = nextqual
                 nextqual = undefined
                 if (!newid) {
@@ -1447,7 +1448,7 @@ export class AVSrouter {
                   }
                 }
               }
-              if (newid) {
+              if (typeof newid !== 'undefined') {
                 slog('change id unregister stream peek', newid, curid)
                 if (curid && curid !== 'sleep')
                   this.unregisterStream(curid, type, writeChunk)
@@ -1460,6 +1461,8 @@ export class AVSrouter {
                 increaseQual = this.getIncreaseQual(newid, type)
                 decreaseQual = this.getDecreaseQual(newid, type)
                 curid = newid
+                curqual = fixQuality(curqual) // we may need to fix it...., if it is -1 or unavaliable
+                slog('cur quality after change id:', curqual)
                 newid = undefined
               }
               try {
@@ -1683,6 +1686,14 @@ export class AVSrouter {
                       newid = messid
                       const checkqual = fixQuality(curqual)
                       if (checkqual !== curqual) nextqual = checkqual
+                      slog(
+                        'registerStream in change',
+                        newid,
+                        type,
+                        nextqual,
+                        curqual,
+                        checkqual
+                      )
 
                       this.registerStream(newid, type, writeChunk)
                     } else {
