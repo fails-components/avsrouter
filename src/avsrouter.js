@@ -561,8 +561,10 @@ export class AVSrouter {
       })
       realm.qualities[quality] = Date.now()
     }
-    if (isRouter) realm.remoteSources.add(commi)
-    else realm.localSources.add(commi)
+    delete realm.sendGone
+    if (isRouter) {
+      realm.remoteSources.add(commi)
+    } else realm.localSources.add(commi)
     return commi
   }
 
@@ -721,6 +723,7 @@ export class AVSrouter {
         const value = Buffer.from(
           nextspki.split(':').map((el) => parseInt(el, 16))
         )
+        glog('Open remote session to', next, id, type)
         const session = new WebTransport(next, {
           serverCertificateHashes: [{ algorithm: 'sha-256', value }]
         })
@@ -756,6 +759,7 @@ export class AVSrouter {
 
         this.handleSession(session, rserv.requests)
           .finally(() => {
+            glog('Remote session closed', next, id, type)
             // may be inform all clients listening
             delete this.rservers[next]
           })
@@ -866,6 +870,38 @@ export class AVSrouter {
       realm.video.rsession.forEach((el) => el.remove())
       realm.audio.rsession.forEach((el) => el.remove()) // remove all remote sources from realm
     }
+    const sendGone = (realmtype, type) => {
+      try {
+        glog(
+          'sendgone test',
+          type,
+          realmtype.localSources.size === 0,
+          realmtype.remoteSources.size === 0,
+          realmtype.listeners.size > 0,
+          !realmtype.sendGone
+        )
+        if (
+          realmtype.localSources.size === 0 &&
+          realmtype.remoteSources.size === 0 &&
+          realmtype.listeners.size > 0 &&
+          !realmtype.sendGone
+        ) {
+          // signal, that the source is dead, and another router may be the source
+          this.sendBson({ task: 'gone' }, (buf) => {
+            realmtype.listeners.forEach((wc) => {
+              wc(buf, id, 'generalmessage')
+            })
+            realmtype.sendGone = true
+          })
+        }
+      } catch (error) {
+        glog('problem in sendGone', error)
+      }
+    }
+    sendGone(realm.audio, 'audio')
+    sendGone(realm.video, 'video')
+    sendGone(realm.screen, 'screen')
+
     if (
       realm.audio.listeners.size === 0 &&
       realm.audio.localSources.size === 0 &&
@@ -1299,12 +1335,25 @@ export class AVSrouter {
               paketcommitter(chunk)
             } else {
               let store = false
-              if (chunk.task && chunk.task === 'decoderconfig') {
-                store = true
-                slog('decoderconfig', JSON.stringify(chunk))
-              } else if (chunk.task && chunk.task === 'suspendQuality') {
-                store = false
-                suspendQuality()
+              if (chunk.task) {
+                if (chunk.task === 'decoderconfig') {
+                  store = true
+                  slog('decoderconfig', JSON.stringify(chunk))
+                } else if (chunk.task === 'suspendQuality') {
+                  store = false
+                  suspendQuality()
+                } else if (chunk.task === 'gone') {
+                  store = false
+                  slog('gone received')
+                  if (args.isRouter) {
+                    // if it is gone, it is best to close the stream, no point to keep it open
+                    await Promise.all([
+                      streamwriter.abort('source is gone'),
+                      streamreader.cancel('source is gone')
+                    ])
+                    break
+                  }
+                }
               }
               if (store) commitAndStoreMessage(chunk)
             }
@@ -1402,6 +1451,12 @@ export class AVSrouter {
         })
         writeChunk = async (chunk, pid, quality) => {
           const now = Date.now()
+          if (quality === 'generalmessage') {
+            // this is an important administrative message, that needs to be send to all listerners
+            // probably the source is completely gone.
+            outgoingpipe.addPaket(chunk)
+            return
+          }
           if (now - lastpaket > 1000 && !args.fixedQuality) {
             // recheck if quality is available
             const newqual = fixQuality(curqual)
@@ -1749,6 +1804,12 @@ export class AVSrouter {
       fetchers[id][type] = streams
 
       const writeTest = async (chunk, pid, quality) => {
+        if (quality === 'generalmessage') {
+          // this is not a normal message but a control message!
+          // that requires special handling
+          // just drop it
+          return
+        }
         if (!streams[quality]) {
           try {
             streams[quality] = session.createBidirectionalStream() // means we have no stream
