@@ -872,20 +872,13 @@ export class AVSrouter {
     }
     const sendGone = (realmtype, type) => {
       try {
-        glog(
-          'sendgone test',
-          type,
-          realmtype.localSources.size === 0,
-          realmtype.remoteSources.size === 0,
-          realmtype.listeners.size > 0,
-          !realmtype.sendGone
-        )
         if (
           realmtype.localSources.size === 0 &&
           realmtype.remoteSources.size === 0 &&
           realmtype.listeners.size > 0 &&
           !realmtype.sendGone
         ) {
+          glog('Sending send gone')
           // signal, that the source is dead, and another router may be the source
           this.sendBson({ task: 'gone' }, (buf) => {
             realmtype.listeners.forEach((wc) => {
