@@ -1137,9 +1137,7 @@ export class AVSrouter {
             {
               name: 'RSA-OAEP'
             },
-            (
-              await this.keypair
-            ).privateKey,
+            (await this.keypair).privateKey,
             aeskey
           ),
           {
