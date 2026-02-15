@@ -13,7 +13,7 @@ After the lecture has been completed a pdf can be downloaded at any time.
 
 FAILS components is completely integrated using LTI into LMS such as Moodle.
 
-It is the reincarnation of a system, we are using at our theoretical physics institute for several years. Now *initial development* is almost complete, and the software is now rolling out next term university wide.
+It is the reincarnation of a system, we were using at our theoretical physics institute for several years. It is was rolled out university wide since a couple of years.
 
 The system is written with containerization and scalability in mind.
 
