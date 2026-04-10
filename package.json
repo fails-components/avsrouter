@@ -48,7 +48,7 @@
   "dependencies": {
     "@fails-components/webtransport": "^1.5.1",
     "@fails-components/webtransport-transport-http3-quiche": "^1.5.1",
-    "axios": "^1.13.5",
+    "axios": "^1.15.0",
     "bson": "^4.6.3",
     "express": "^4.22.1",
     "jsonwebtoken": "^9.0.0",
