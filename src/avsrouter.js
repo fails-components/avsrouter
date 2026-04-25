@@ -870,7 +870,7 @@ export class AVSrouter {
       realm.video.rsession.forEach((el) => el.remove())
       realm.audio.rsession.forEach((el) => el.remove()) // remove all remote sources from realm
     }
-    const sendGone = (realmtype, type) => {
+    const sendGone = (realmtype /*, type*/) => {
       try {
         if (
           realmtype.localSources.size === 0 &&
@@ -1314,7 +1314,6 @@ export class AVSrouter {
       try {
         streamwriter = await stream.writable.getWriter()
 
-        // eslint-disable-next-line no-unmodified-loop-condition
         while (sessionRunning && incomStreamRunning) {
           // first the paket, as they are processed partially
           while (parseHelper.hasMessageOrPaket()) {
@@ -1580,7 +1579,6 @@ export class AVSrouter {
           let temporalLayerId = 0
           let candecreaseQual = true
           try {
-            // eslint-disable-next-line no-unmodified-loop-condition
             while (sessionRunning && outStreamRunning && streamrunning()) {
               const chunk = await outgoingpipe.getPaket()
               const now = Date.now()
@@ -1669,7 +1667,6 @@ export class AVSrouter {
         this.registerStream(curid, type, writeChunk)
         const reading = async () => {
           try {
-            // eslint-disable-next-line no-unmodified-loop-condition
             while (sessionRunning && outStreamRunning && streamrunning()) {
               while (parseHelper.hasMessageOrPaket()) {
                 // only messages for controlling
@@ -1779,6 +1776,7 @@ export class AVSrouter {
     }
 
     // our stream fetcher
+    // eslint-disable-next-line no-unused-vars
     const processStreamFetcher = ({ id, type, tickets, nonce }) => {
       // ok we install listeners to automatically fetch all qualities
 
@@ -1904,7 +1902,6 @@ export class AVSrouter {
         const parseHelper = new ParseHelper()
         pspos = 2
         let garbage = 0
-        // eslint-disable-next-line no-unmodified-loop-condition
         while (sessionRunning) {
           pspos = 3
           const paket = await streamReader.read()
@@ -2100,7 +2097,6 @@ export class AVSrouter {
       // now, we process every incoming bidistream and see what it wants
       try {
         const bidiReader = session.incomingBidirectionalStreams.getReader()
-        // eslint-disable-next-line no-unmodified-loop-condition
         while (sessionRunning) {
           const bidistr = await bidiReader.read()
           if (bidistr.done) {

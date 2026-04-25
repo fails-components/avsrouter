@@ -27,7 +27,7 @@ const mainfunc = async () => {
     } catch (error) {
       log('error reading certifcate', error)
     }
-  } catch (error) {
+  } catch {
     // be silent if file does not exist
   }
 
