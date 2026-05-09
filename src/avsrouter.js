@@ -583,6 +583,8 @@ export class AVSrouter {
       await Promise.all([send1, send2])
     } catch (error) {
       glog('problem send bson', tosend)
+      glog('BSON Error Code:', error.code)
+      glog('BSON Error Message:', error.message)
       throw new Error('sendBson failed:', error)
     }
   }
@@ -1267,7 +1269,9 @@ export class AVSrouter {
             statArray = []
             try {
               insideSend = true
-              await this.sendBson(sendArray, writeStat)
+              for (const sendStat of sendArray) {
+                await this.sendBson(sendStat, writeStat)
+              }
             } catch (error) {
               throw new Error('sendBson err:', error)
             }
